@@ -164,10 +164,10 @@ class API( object ):
 			throw = data["throw"]
 			loss = data["loss"]
 		except KeyError:
-			salt = "NULL"
-			replay = "NULL"
-			throw = "NULL"
-			loss = "NULL"
+			salt = None
+			replay = None
+			throw = None
+			loss = None
 		else:
 			logging.info( "We found a game with replay data!" )
 

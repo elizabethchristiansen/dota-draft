@@ -81,16 +81,16 @@ def valid_game( game ):
 			if type( i ) != int or ( i < 0 or i > 130 ):
 				return False
 
-	if game["salt"] != "NULL" and type( game["salt"] ) != int:
+	if game["salt"] is not None and type( game["salt"] ) != int:
 		return False
 
-	if game["throw"] != "NULL" and type( game["throw"] ) != int:
+	if game["throw"] is not None and type( game["throw"] ) != int:
 		return False
 
-	if game["loss"] != "NULL" and type( game["loss"] ) != int:
+	if game["loss"] is not None and type( game["loss"] ) != int:
 		return False
 
-	if type( game["replay"] ) != str or ( game["replay"] != "NULL" and game["replay"][0:4] != "http" ):
+	if ( game["replay"] is not None and type( game["replay"] ) != str ) or ( type( game["replay"] ) == str and game["replay"][0:4] != "http" ):
 		return False
 
 	return True
