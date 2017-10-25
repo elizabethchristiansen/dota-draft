@@ -1,0 +1,7 @@
+*.log
+env
+.DS_Store
+desktop.ini
+vars
+
+__pycache__
