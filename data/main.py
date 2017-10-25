@@ -69,9 +69,17 @@ def valid_game( game ):
 
 	if type( game["radiant_picks"] ) != list or len( game["radiant_picks"] ) != 5:
 		return False
+	else:
+		for i in game["radiant_picks"]:
+			if type( i ) != int or ( i < 0 or i > 130 ):
+				return False
 
 	if type( game["dire_picks"] ) != list or len( game["dire_picks"] ) != 5:
 		return False
+	else:
+		for i in game["dire_picks"]:
+			if type( i ) != int or ( i < 0 or i > 130 ):
+				return False
 
 	if game["salt"] != "NULL" and type( game["salt"] ) != int:
 		return False
@@ -120,18 +128,18 @@ if __name__ == "__main__":
 		logging.info( "Found a valid game, committing to the database" )
 		num_matches += 1
 
-		match_query = "INSERT OR REPLACE INTO match_info VALUES ( {match_id}, {match_time}, {winner}, {duration}, {radiant_score}, {dire_score}, {skill}, {region}, {salt}, {replay}, {throw}, {loss} );".format( **match )
-		cursor.execute( match_query )
+		match_query = "INSERT OR REPLACE INTO match_info VALUES ( :match_id, :match_time, :winner, :duration, :radiant_score, :dire_score, :skill, :region, :salt, :replay, :throw, :loss );"
+		cursor.execute( match_query, match )
 
 		match_id = match["match_id"]
 
 		for i in match["dire_picks"]:
-			query = "INSERT OR REPLACE INTO hero_picks VALUES ( {}, {}, {} );".format( match_id, 0, i )
-			cursor.execute( query )
+			query = "INSERT OR REPLACE INTO hero_picks VALUES ( ?, ?, ? );"
+			cursor.execute( query, ( match_id, 0, i ) )
 
 		for i in match["radiant_picks"]:
-			query = "INSERT OR REPLACE INTO hero_picks VALUES ( {}, {}, {} );".format( match_id, 1, i )
-			cursor.execute( query )
+			query = "INSERT OR REPLACE INTO hero_picks VALUES ( ?, ?, ? );"
+			cursor.execute( query, ( match_id, 1, i ) )
 
 		db.commit()
 

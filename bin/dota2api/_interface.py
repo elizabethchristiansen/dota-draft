@@ -35,8 +35,8 @@ class API( object ):
 
 		self.open_api_timers = {
 			"last_request":		0,
-			"wait_seconds":		0.4,
-			"rate_limit_wait":	30,
+			"wait_seconds":		0.35,
+			"rate_limit_wait":	60,
 			"404_sleep":		60,
 		}
 
@@ -253,7 +253,6 @@ class API( object ):
 
 	def run( self ):
 		self.events.create_task( self._get_matches() )
-		self.events.create_task( self._get_matches_info() )
 		self.events.create_task( self._get_matches_info() )
 		self.events.create_task( self._get_matches_info() )
 		self.events.run_forever()
