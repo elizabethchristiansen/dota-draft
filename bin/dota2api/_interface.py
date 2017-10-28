@@ -51,7 +51,7 @@ class API( object ):
 
 		self.events = asyncio.get_event_loop()
 		self.matches_queue = asyncio.Queue( maxsize = 1000 )
-		self.match_info_queue = queue.Queue()
+		self.match_info_queue = queue.Queue( maxsize = 1000 )
 
 		self.oapi_lock = asyncio.Lock()
 		self.dotaapi_lock = asyncio.Lock()
@@ -131,13 +131,13 @@ class API( object ):
 
 				if res.status_code != 200:
 					if res.status_code == 429:
-						logging.warning( "We are being rate limited, waiting for {} seconds".format( self.dota_api_timers["rate_limit_wait"] ) )
+						logging.warning( "We are being rate limited on the Dota API, waiting for {} seconds".format( self.dota_api_timers["rate_limit_wait"] ) )
 					elif res.status_code == 503 or res.status_code == 500:
-						logging.error( "The API is down or otherwise not responding, waiting for {} seconds".format( self.dota_api_timers["rate_limit_wait"] ) )
+						logging.error( "The Dota API is down or otherwise not responding, waiting for {} seconds".format( self.dota_api_timers["rate_limit_wait"] ) )
 						if not self.retry:
 							raise ServiceNotAvailable
 					elif res.status_code == 401 or res.status_code == 403:
-						logging.error( "Our authentication key seems to be wrong or we have otherwise been blocked from the service, waiting for {} seconds".format( self.dota_api_timers["rate_limit_wait"] ) )
+						logging.error( "Our Dota API authentication key seems to be wrong or we have otherwise been blocked from the service, waiting for {} seconds".format( self.dota_api_timers["rate_limit_wait"] ) )
 						if not self.retry:
 							raise InvalidAuthKey
 
@@ -260,19 +260,24 @@ class API( object ):
 			for _ in range( 0, self.max_retry ):
 				res = await self._oapi_request( url )
 
-				if res.status_code == 404:
-					logging.warning( "Match {} ({}) does not yet exist in the OAPI database, sleeping".format( match_id, res.url ) )
-					await asyncio.sleep( self.open_api_timers["404_sleep"] )
-					continue
-				elif res.status_code != 200:
-					logging.error( "There was an undefined error in the OAPI call to {} (status code: {}), sleeping in case it is rate limiting".format( res.url, res.status_code ) )
-					await asyncio.sleep( self.open_api_timers["rate_limit_wait"] )
-					if not self.retry:
-						raise OAPIError
-
+				if res.status_code != 200:
 					self.open_api_timers["rate_limit_wait"] += self.wait_increment
-					continue
 
+					if res.status_code == 404:
+						logging.warning( "Match {} ({}) does not yet exist in the OAPI database, sleeping".format( match_id, res.url ) )
+						await asyncio.sleep( self.open_api_timers["404_sleep"] )
+						continue
+					elif res.status_code == 429:	# I am guessing this is rate limiting since it is the same status code as the dota api, could be wrong
+						logging.warning( "We are being rate limited by the OAPI, waiting for {} seconds for URL {}".format( self.open_api_timers["rate_limit_wait"], res.url ) )
+						await asyncio.sleep( self.open_api_timers["rate_limit_wait"] )
+						continue
+					else:
+						logging.error( "There was an undefined error in the OAPI call to {} (status code: {}), sleeping for {} seconds".format( res.url, res.status_code, self.open_api_timers["rate_limit_wait"] ) )
+						await asyncio.sleep( self.open_api_timers["rate_limit_wait"] )
+						if not self.retry:
+							raise OAPIError
+
+						continue
 				break
 
 			if res.status_code != 200:
