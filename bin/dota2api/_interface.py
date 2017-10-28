@@ -261,23 +261,21 @@ class API( object ):
 				res = await self._oapi_request( url )
 
 				if res.status_code != 200:
-					self.open_api_timers["rate_limit_wait"] += self.wait_increment
-
 					if res.status_code == 404:
 						logging.warning( "Match {} ({}) does not yet exist in the OAPI database, sleeping".format( match_id, res.url ) )
 						await asyncio.sleep( self.open_api_timers["404_sleep"] )
-						continue
 					elif res.status_code == 429:	# I am guessing this is rate limiting since it is the same status code as the dota api, could be wrong
 						logging.warning( "We are being rate limited by the OAPI, waiting for {} seconds for URL {}".format( self.open_api_timers["rate_limit_wait"], res.url ) )
 						await asyncio.sleep( self.open_api_timers["rate_limit_wait"] )
-						continue
 					else:
 						logging.error( "There was an undefined error in the OAPI call to {} (status code: {}), sleeping for {} seconds".format( res.url, res.status_code, self.open_api_timers["rate_limit_wait"] ) )
-						await asyncio.sleep( self.open_api_timers["rate_limit_wait"] )
 						if not self.retry:
 							raise OAPIError
 
-						continue
+						await asyncio.sleep( self.open_api_timers["rate_limit_wait"] )
+					
+					self.open_api_timers["rate_limit_wait"] += self.wait_increment
+					continue
 				break
 
 			if res.status_code != 200:
