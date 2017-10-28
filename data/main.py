@@ -116,6 +116,7 @@ if __name__ == "__main__":
 	cursor = db.cursor()
 
 	signal.signal( signal.SIGINT, exit_gracefully )
+	signal.signal( signal.SIGTERM, exit_gracefully )
 
 	num_matches = 0
 	while True:
