@@ -3,6 +3,7 @@ env
 .DS_Store
 desktop.ini
 vars
+nohup.out
 
 __pycache__
 
