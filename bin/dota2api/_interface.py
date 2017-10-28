@@ -1,6 +1,5 @@
 import time
 import logging
-import aiohttp
 import asyncio
 import requests
 import queue
@@ -9,10 +8,12 @@ from functools import partial
 from ._errors import ServiceNotAvailable, InvalidAuthKey, RateLimitActive, CouldNotInit, OAPIError
 
 class API( object ):
-	def __init__( self, key, data_format = "json", lang = "en" ):
+	def __init__( self, key, retry_on_error = True, max_retry = 5, data_format = "json", lang = "en" ):
 		self.key = key
 		self.format = data_format
 		self.lang = lang
+		self.retry = retry_on_error
+		self.max_retry = max_retry
 
 		self.base_dota_url = "https://api.steampowered.com/IDOTA2Match_570/"
 		self.base_oapi_url = "https://api.opendota.com/api/"
@@ -27,28 +28,33 @@ class API( object ):
 		}
 
 		self.dota_api_timers = {
-			"last_request":			0,
-			"wait_seconds":			5,
-			"rate_limit_wait":		30,
-			"empty_wait_seconds": 	15	
+			"last_request":				0,
+			"wait_seconds":				5,
+			"rate_limit_wait":			30,
+			"rate_limit_wait_base":		30,
+			"empty_wait_seconds": 		30
 		}
 
 		self.open_api_timers = {
-			"last_request":		0,
-			"wait_seconds":		0.35,
-			"rate_limit_wait":	60,
-			"404_sleep":		60,
+			"last_request":				0,
+			"wait_seconds":				0.4,
+			"rate_limit_wait":			30,
+			"rate_limit_wait_base":		30,
+			"404_sleep":				60,
 		}
+
+		self.wait_increment = 20
 
 		self.dropped_games = 0
 
 		self._get_current_seq_num()
 
 		self.events = asyncio.get_event_loop()
-		self.matches_queue = asyncio.Queue( maxsize = 200 )
+		self.matches_queue = asyncio.Queue( maxsize = 1000 )
 		self.match_info_queue = queue.Queue()
 
 		self.oapi_lock = asyncio.Lock()
+		self.dotaapi_lock = asyncio.Lock()
 
 	def _get_current_seq_num( self ):
 		payload = { "matches_requested": 1 }
@@ -67,8 +73,11 @@ class API( object ):
 			self.seq_from = int( j["match_seq_num"] )
 			logging.info( "Found the first seq num from the Dota API ({})".format( self.seq_from ) )
 		else:
-			logging.error( "Could not initialize the Dota API parser (could not get seq num, status_code code: {}), exiting".format( r.status_code ) )
-			raise CouldNotInit
+			logging.error( "Could not initialize the Dota API parser (could not get seq num, status_code code: {})".format( r.status_code ) )
+			if not self.retry:
+				raise CouldNotInit
+
+			self._get_current_seq_num()
 
 	def _parse_match_history( self, data ):
 		valid_matches = []
@@ -96,42 +105,69 @@ class API( object ):
 
 		return valid_matches 
 
+	async def _dapi_request( self, url, headers, payload ):
+		with await self.dotaapi_lock:
+			if time.time() - self.dota_api_timers["last_request"] < self.dota_api_timers["wait_seconds"]:
+					await asyncio.sleep( self.dota_api_timers["wait_seconds"] - ( time.time() - self.dota_api_timers["last_request"] ) )
+
+			get_func = partial( requests.get, url, headers = headers, params = payload )
+			future_res = self.events.run_in_executor( None, get_func )
+			self.dota_api_timers["last_request"] = time.time()
+			logging.info( "Submitting request to Dota API URL {}".format( url ) )
+			res = await future_res
+
+		return res
+
 	async def _get_matches( self ):
 		while True:
-			if time.time() - self.dota_api_timers["last_request"] < self.dota_api_timers["wait_seconds"]:
-				await asyncio.sleep( self.dota_api_timers["wait_seconds"] - ( time.time() - self.dota_api_timers["last_request"] ) )
-
 			requested = 100
 			headers = self.base_headers
 			payload = { "start_at_match_seq_num": self.seq_from, "matches_requested": requested }
 			payload.update( self.base_payload )
 			url = self.base_dota_url + "GetMatchHistoryBySequenceNum/v1/"
 
-			get_func = partial( requests.get, url, headers = headers, params = payload )
-			future_res = self.events.run_in_executor( None, get_func )
-			res = await future_res
-			self.dota_api_timers["last_request"] = time.time()	
+			for _ in range( 0, self.max_retry ):
+				res = await self._dapi_request( url, headers, payload )
 
-			if res.status_code == 429:
-				logging.warning( "We are being rate limited, waiting for {} seconds".format( self.rate_limit_wait ) )
-				await asyncio.sleep( self.rate_limit_wait )
-			elif res.status_code == 503 or res.status_code == 500:
-				logging.error( "The API is down or otherwise not responding, exiting!" )
-				raise ServiceNotAvailable
-			elif res.status_code == 401 or res.status_code == 403:
-				logging.error( "Our authentication key seems to be wrong or we have otherwise been blocked from the service, exiting!" )
-				raise InvalidAuthKey
-			elif res.status_code == 200:
-				logging.info( "Retrieved from Dota API URL {}".format( res.url ) )
-				data = res.json()
+				if res.status_code != 200:
+					if res.status_code == 429:
+						logging.warning( "We are being rate limited, waiting for {} seconds".format( self.dota_api_timers["rate_limit_wait"] ) )
+					elif res.status_code == 503 or res.status_code == 500:
+						logging.error( "The API is down or otherwise not responding, waiting for {} seconds".format( self.dota_api_timers["rate_limit_wait"] ) )
+						if not self.retry:
+							raise ServiceNotAvailable
+					elif res.status_code == 401 or res.status_code == 403:
+						logging.error( "Our authentication key seems to be wrong or we have otherwise been blocked from the service, waiting for {} seconds".format( self.dota_api_timers["rate_limit_wait"] ) )
+						if not self.retry:
+							raise InvalidAuthKey
 
-				num_results = len( data["result"]["matches"] )
-				if num_results > 0:
-					self.seq_from += min( num_results, requested )
+					await asyncio.sleep( self.dota_api_timers["rate_limit_wait"] )
+					self.dota_api_timers["rate_limit_wait"] += self.wait_increment
+					continue
 				else:
-					logging.info( "We are going faster than the Dota API, waiting for {} seconds".format( self.dota_api_timers["empty_wait_seconds"] ) )
-					await asyncio.sleep( self.dota_api_timers["empty_wait_seconds"] )
+					logging.info( "Retrieved from Dota API URL {}".format( res.url ) )
+					data = res.json()
 
+					num_results = len( data["result"]["matches"] )
+					if num_results > 0:
+						self.seq_from += min( num_results, requested )
+					else:
+						logging.info( "We are going faster than the Dota API, waiting for {} seconds".format( self.dota_api_timers["empty_wait_seconds"] ) )
+						await asyncio.sleep( self.dota_api_timers["empty_wait_seconds"] )
+						continue
+
+					break
+
+			if res.status_code != 200:
+				logging.error( "Could not poll the Dota API after {} retries. [URL: {}, status code: {}]".format( self.max_retry, res.url, res.status_code ) )
+				if not self.retry:
+					raise ServiceNotAvailable
+
+				await ayncio.sleep( 600 )
+				logging.info( "Dota API thread woke up after previous errors" )
+				continue
+
+			self.dota_api_timers["rate_limit_wait"] = max( self.dota_api_timers["rate_limit_wait_base"], self.dota_api_timers["rate_limit_wait"] - self.wait_increment )
 			valid_matches = self._parse_match_history( data )
 
 			for i in valid_matches:
@@ -221,8 +257,7 @@ class API( object ):
 			match_id = await self.matches_queue.get()
 			url = self.base_oapi_url + "matches/" + str( match_id )
 
-			retries = 5
-			for i in range( 0, retries ):
+			for _ in range( 0, self.max_retry ):
 				res = await self._oapi_request( url )
 
 				if res.status_code == 404:
@@ -232,14 +267,19 @@ class API( object ):
 				elif res.status_code != 200:
 					logging.error( "There was an undefined error in the OAPI call to {} (status code: {}), sleeping in case it is rate limiting".format( res.url, res.status_code ) )
 					await asyncio.sleep( self.open_api_timers["rate_limit_wait"] )
-					continue #raise OAPIError
+					if not self.retry:
+						raise OAPIError
+
+					self.open_api_timers["rate_limit_wait"] += self.wait_increment
+					continue
 
 				break
 
 			if res.status_code != 200:
-				logging.error( "Match {} did not appear in the OAPI database after {} retries (status code {}), skipping to next match".format( match_id, retries, res.status_code ) )
+				logging.error( "Match {} did not appear in the OAPI database after {} retries (status code {}), skipping to next match".format( match_id, self.max_retry, res.status_code ) )
 				continue
 
+			self.open_api_timers["rate_limit_wait"] = max( self.open_api_timers["rate_limit_wait_base"], self.open_api_timers["rate_limit_wait"] - self.wait_increment )
 			data = res.json()
 			match = self._parse_match( data )
 
@@ -252,6 +292,7 @@ class API( object ):
 		return self.match_info_queue.get()
 
 	def run( self ):
+		logging.info( "Initializing event loop" )
 		self.events.create_task( self._get_matches() )
 		self.events.create_task( self._get_matches_info() )
 		self.events.create_task( self._get_matches_info() )
