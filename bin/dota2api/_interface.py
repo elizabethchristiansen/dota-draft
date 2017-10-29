@@ -163,8 +163,8 @@ class API( object ):
 				if not self.retry:
 					raise ServiceNotAvailable
 
-				await ayncio.sleep( 600 )
-				logging.info( "Dota API thread woke up after previous errors" )
+				await asyncio.sleep( 600 )
+				logging.warning( "Dota API thread woke up after previous errors" )
 				continue
 
 			self.dota_api_timers["rate_limit_wait"] = max( self.dota_api_timers["rate_limit_wait_base"], self.dota_api_timers["rate_limit_wait"] - self.wait_increment )
@@ -173,7 +173,7 @@ class API( object ):
 			for i in valid_matches:
 				await self.matches_queue.put( i )
 
-	def _parse_match( self, data ):
+	def _parse_match( self, data, url ):
 		try:
 			match_id = data["match_id"]
 			dire_score = data["dire_score"]
@@ -188,7 +188,7 @@ class API( object ):
 			players = data["human_players"]
 			lobby = data["lobby_type"]
 		except ( KeyError, TypeError ) as e:
-			logging.error( "The OAPI returned JSON which did not contain the necessary fields" )
+			logging.error( "The OAPI URL {} returned JSON which did not contain the necessary fields".format( url ) )
 			return None
 
 		if game_mode != 22 or lobby != 7 or players != 10 or skill is None:
@@ -284,7 +284,7 @@ class API( object ):
 
 			self.open_api_timers["rate_limit_wait"] = max( self.open_api_timers["rate_limit_wait_base"], self.open_api_timers["rate_limit_wait"] - self.wait_increment )
 			data = res.json()
-			match = self._parse_match( data )
+			match = self._parse_match( data, res.url )
 
 			if match is not None:
 				self.match_info_queue.put( match )
