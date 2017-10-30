@@ -7,7 +7,7 @@ import signal
 import sys
 import time
 
-class log_message_count(object):
+class log_message_count( object ):
     def __init__( self, method ):
         self.method = method
         self.counter = 0
@@ -16,15 +16,17 @@ class log_message_count(object):
         self.counter += 1
         return self.method( *args, **kwargs )
 
-logging.addLevelName( 25, "STATUS" )
-def status_log( self, message, *args, **kwargs ):
-    if self.isEnabledFor( 25 ):
-        self._log( 25, message, args, **kwargs )
+STATUS_LEVEL = 35
+def status_log( message, *args, **kwargs ):
+    logging.log( STATUS_LEVEL, message, *args, **kwargs )
 
-logging.basicConfig( filename="scraper.log", filemode="a", format='%(asctime)s : %(levelname)s : %(message)s', level=logging.WARNING )
+logging.basicConfig( format='%(asctime)s : %(levelname)s : %(message)s', level=logging.WARNING )
 logging.error = log_message_count( logging.error )
 logging.warning = log_message_count( logging.warning )
-logging.Logger.status = status_log
+
+logging.addLevelName( STATUS_LEVEL, "STATUS" )
+setattr( logging, "STATUS", STATUS_LEVEL )
+setattr( logging, "status", status_log )
 
 def load_database():    
     db = sqlite3.connect( "database" )
@@ -114,7 +116,7 @@ def valid_game( game ):
     return True
 
 def exit_gracefully( signal, frame ):
-    logging.error( "Caught SIGINT, closing loop and database gracefully!" )
+    logging.status( "Caught SIGINT, closing loop and database gracefully!" )
 
     db.close()
     loop.stop()
