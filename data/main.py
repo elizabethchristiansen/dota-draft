@@ -5,146 +5,171 @@ import asyncio
 import logging
 import signal
 import sys
+import time
+
+class log_message_count(object):
+    def __init__( self, method ):
+        self.method = method
+        self.counter = 0
+
+    def __call__( self, *args, **kwargs ):
+        self.counter += 1
+        return self.method( *args, **kwargs )
+
+logging.addLevelName( 25, "STATUS" )
+def status_log( self, message, *args, **kwargs ):
+    if self.isEnabledFor( 25 ):
+        self._log( 25, message, args, **kwargs )
 
 logging.basicConfig( filename="scraper.log", filemode="a", format='%(asctime)s : %(levelname)s : %(message)s', level=logging.WARNING )
+logging.error = log_message_count( logging.error )
+logging.warning = log_message_count( logging.warning )
+logging.Logger.status = status_log
 
-def load_database():	
-	db = sqlite3.connect( "database" )
+def load_database():    
+    db = sqlite3.connect( "database" )
 
-	foreign_keys = ("PRAGMA foreign_keys = 1")
+    foreign_keys = ("PRAGMA foreign_keys = 1")
 
-	create_table = '''CREATE TABLE IF NOT EXISTS match_info ( 
-		match_id INTEGER PRIMARY KEY NOT NULL, 
-		match_time INTEGER, 
-		winner INTEGER, 
-		duration INTEGER, 
-		r_score INTEGER, 
-		d_score INTEGER,
-		skill INTEGER, 
-		region INTEGER,
-		salt INTEGER, 
-		replay TEXT, 
-		throw INTEGER, 
-		loss INTEGER )'''
+    create_table = '''CREATE TABLE IF NOT EXISTS match_info ( 
+        match_id INTEGER PRIMARY KEY NOT NULL, 
+        match_time INTEGER, 
+        winner INTEGER, 
+        duration INTEGER, 
+        r_score INTEGER, 
+        d_score INTEGER,
+        skill INTEGER, 
+        region INTEGER,
+        salt INTEGER, 
+        replay TEXT, 
+        throw INTEGER, 
+        loss INTEGER )'''
 
-	create_picks_table = '''CREATE TABLE IF NOT EXISTS hero_picks ( 
-		match_id INTEGER NOT NULL, 
-		team INTEGER,
-		hero INTEGER,
-		PRIMARY KEY (match_id, hero),
-		FOREIGN KEY (match_id) REFERENCES match_info(match_id) ON DELETE CASCADE )'''
+    create_picks_table = '''CREATE TABLE IF NOT EXISTS hero_picks ( 
+        match_id INTEGER NOT NULL, 
+        team INTEGER,
+        hero INTEGER,
+        PRIMARY KEY (match_id, hero),
+        FOREIGN KEY (match_id) REFERENCES match_info(match_id) ON DELETE CASCADE )'''
 
-	cursor = db.cursor()
-	cursor.execute( foreign_keys )
-	cursor.execute( create_table )
-	cursor.execute( create_picks_table )
-	db.commit()
+    cursor = db.cursor()
+    cursor.execute( foreign_keys )
+    cursor.execute( create_table )
+    cursor.execute( create_picks_table )
+    db.commit()
 
-	return db
+    return db
 
 def valid_game( game ):
-	if type( game["match_id"] ) != int or game["match_id"] < 0:
-		return False
+    if type( game["match_id"] ) != int or game["match_id"] < 0:
+        return False
 
-	if type( game["match_time"] ) != int or game["match_time"] < 0:
-		return False
+    if type( game["match_time"] ) != int or game["match_time"] < 0:
+        return False
 
-	if type( game["winner"] ) != int or ( game["winner"] != 0 and game["winner"] != 1 ):
-		return False
+    if type( game["winner"] ) != int or ( game["winner"] != 0 and game["winner"] != 1 ):
+        return False
 
-	if type( game["duration"] ) != int or game["duration"] <= 0:
-		return False
+    if type( game["duration"] ) != int or game["duration"] <= 0:
+        return False
 
-	if type( game["radiant_score"] ) != int or game["radiant_score"] < 0:
-		return False
+    if type( game["radiant_score"] ) != int or game["radiant_score"] < 0:
+        return False
 
-	if type( game["dire_score"] ) != int or game["dire_score"] < 0:
-		return False
+    if type( game["dire_score"] ) != int or game["dire_score"] < 0:
+        return False
 
-	if type( game["skill"] ) != int or ( game["skill"] < 1 or game["skill"] > 3 ):
-		return False
+    if type( game["skill"] ) != int or ( game["skill"] < 1 or game["skill"] > 3 ):
+        return False
 
-	if type( game["region"] ) != int or game["region"] < 0:
-		return False
+    if type( game["region"] ) != int or game["region"] < 0:
+        return False
 
-	if type( game["radiant_picks"] ) != list or len( game["radiant_picks"] ) != 5:
-		return False
-	else:
-		for i in game["radiant_picks"]:
-			if type( i ) != int or ( i < 0 or i > 130 ):
-				return False
+    if type( game["radiant_picks"] ) != list or len( game["radiant_picks"] ) != 5:
+        return False
+    else:
+        for i in game["radiant_picks"]:
+            if type( i ) != int or ( i < 0 or i > 130 ):
+                return False
 
-	if type( game["dire_picks"] ) != list or len( game["dire_picks"] ) != 5:
-		return False
-	else:
-		for i in game["dire_picks"]:
-			if type( i ) != int or ( i < 0 or i > 130 ):
-				return False
+    if type( game["dire_picks"] ) != list or len( game["dire_picks"] ) != 5:
+        return False
+    else:
+        for i in game["dire_picks"]:
+            if type( i ) != int or ( i < 0 or i > 130 ):
+                return False
 
-	if game["salt"] is not None and type( game["salt"] ) != int:
-		return False
+    if game["salt"] is not None and type( game["salt"] ) != int:
+        return False
 
-	if game["throw"] is not None and type( game["throw"] ) != int:
-		return False
+    if game["throw"] is not None and type( game["throw"] ) != int:
+        return False
 
-	if game["loss"] is not None and type( game["loss"] ) != int:
-		return False
+    if game["loss"] is not None and type( game["loss"] ) != int:
+        return False
 
-	if ( game["replay"] is not None and type( game["replay"] ) != str ) or ( type( game["replay"] ) == str and game["replay"][0:4] != "http" ):
-		return False
+    if ( game["replay"] is not None and type( game["replay"] ) != str ) or ( type( game["replay"] ) == str and game["replay"][0:4] != "http" ):
+        return False
 
-	return True
+    return True
 
 def exit_gracefully( signal, frame ):
-	logging.error( "Caught SIGINT, closing loop and database gracefully!" )
+    logging.error( "Caught SIGINT, closing loop and database gracefully!" )
 
-	db.close()
-	loop.stop()
+    db.close()
+    loop.stop()
 
-	sys.exit(0)
+    sys.exit(0)
 
 if __name__ == "__main__":
-	logging.info( "Initialized logging" )
+    logging.status( "--- Starting API Poller ---" )
 
-	key = "413B7794E4797A6A070B473F904CA120"
-	loop = asyncio.get_event_loop()
+    key = "413B7794E4797A6A070B473F904CA120"
+    loop = asyncio.get_event_loop()
 
-	api = API( key = key )
-	future = loop.run_in_executor( None, api.run )
+    api = API( key = key )
+    future = loop.run_in_executor( None, api.run )
 
-	db = load_database()
-	cursor = db.cursor()
+    db = load_database()
+    cursor = db.cursor()
 
-	signal.signal( signal.SIGINT, exit_gracefully )
-	signal.signal( signal.SIGTERM, exit_gracefully )
+    signal.signal( signal.SIGINT, exit_gracefully )
+    signal.signal( signal.SIGTERM, exit_gracefully )
 
-	num_matches = 0
-	while True:
-		match = api.get_match()
+    num_matches = 0
+    start = time.time()
+    while True:
+        match = api.get_match()
 
-		if not valid_game( match ):
-			logging.warning( "We found an invalid game!\n{}\n".format( match ) )
-			continue
+        if not valid_game( match ):
+            logging.warning( "We found an invalid game!\n{}\n".format( match ) )
+            continue
 
-		logging.info( "Found a valid game, committing to the database" )
-		num_matches += 1
+        logging.info( "Found a valid game, committing to the database" )
+        num_matches += 1
 
-		match_query = "INSERT OR REPLACE INTO match_info VALUES ( :match_id, :match_time, :winner, :duration, :radiant_score, :dire_score, :skill, :region, :salt, :replay, :throw, :loss );"
-		cursor.execute( match_query, match )
+        match_query = "INSERT OR REPLACE INTO match_info VALUES ( :match_id, :match_time, :winner, :duration, :radiant_score, :dire_score, :skill, :region, :salt, :replay, :throw, :loss );"
+        cursor.execute( match_query, match )
 
-		match_id = match["match_id"]
+        match_id = match["match_id"]
 
-		for i in match["dire_picks"]:
-			query = "INSERT OR REPLACE INTO hero_picks VALUES ( ?, ?, ? );"
-			cursor.execute( query, ( match_id, 0, i ) )
+        for i in match["dire_picks"]:
+            query = "INSERT OR REPLACE INTO hero_picks VALUES ( ?, ?, ? );"
+            cursor.execute( query, ( match_id, 0, i ) )
 
-		for i in match["radiant_picks"]:
-			query = "INSERT OR REPLACE INTO hero_picks VALUES ( ?, ?, ? );"
-			cursor.execute( query, ( match_id, 1, i ) )
+        for i in match["radiant_picks"]:
+            query = "INSERT OR REPLACE INTO hero_picks VALUES ( ?, ?, ? );"
+            cursor.execute( query, ( match_id, 1, i ) )
 
-		db.commit()
+        db.commit()
 
-		if num_matches % 100 == 0:
-			total = api.dropped_games + num_matches
-			logging.info( "Kept {} games out of {}, {}%".format( num_matches, total, round( ( num_matches / total ) * 100.0, 2 ) ) )
+        error_count = logging.error.counter
+        warning_count = logging.warning.counter
+
+        if num_matches % 100 == 0:
+            t_since_start = time.time() - start
+            total = api.dropped_games + num_matches
+
+            logging.status( "There have been {} errors and {} warnings since start ({} non-messages) at a rate of {}s/{}s or {}/{} per successful request".format( error_count, warning_count, num_matches, round( error_count / t_since_start, 1 ), round( warning_count / t_since_start, 1 ), round( error_count / num_matches, 1 ), round( error_count / num_matches, 1 ) ) )
+            logging.status( "Kept {} games out of {}, {}%".format( num_matches, total, round( ( num_matches / total ) * 100.0, 2 ) ) )
 

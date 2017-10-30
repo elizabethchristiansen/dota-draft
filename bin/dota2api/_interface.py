@@ -32,7 +32,8 @@ class API( object ):
 			"wait_seconds":				5,
 			"rate_limit_wait":			30,
 			"rate_limit_wait_base":		30,
-			"empty_wait_seconds": 		30
+			"empty_wait_seconds": 		30,
+			"continued_error_sleep":	600
 		}
 
 		self.open_api_timers = {
@@ -50,7 +51,7 @@ class API( object ):
 		self._get_current_seq_num()
 
 		self.events = asyncio.get_event_loop()
-		self.matches_queue = asyncio.Queue( maxsize = 1000 )
+		self.matches_queue = asyncio.Queue( maxsize = 100000 )
 		self.match_info_queue = queue.Queue( maxsize = 1000 )
 
 		self.oapi_lock = asyncio.Lock()
@@ -163,8 +164,8 @@ class API( object ):
 				if not self.retry:
 					raise ServiceNotAvailable
 
-				await asyncio.sleep( 600 )
-				logging.warning( "Dota API thread woke up after previous errors" )
+				await asyncio.sleep( self.dota_api_timers["continued_error_sleep"] )
+				logging.status( "Dota API thread woke up after previous errors (slept for {} seconds)".format( self.dota_api_timers["continued_error_sleep"] ) )
 				continue
 
 			self.dota_api_timers["rate_limit_wait"] = max( self.dota_api_timers["rate_limit_wait_base"], self.dota_api_timers["rate_limit_wait"] - self.wait_increment )
