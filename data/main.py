@@ -5,6 +5,7 @@ import logging
 import signal
 import sys
 import time
+import os
 
 STATUS_LEVEL = 35
 
@@ -50,7 +51,8 @@ if __name__ == "__main__":
 
     num_matches = 0
     start = time.time()
-    with Database( "database" ) as db:
+    with Database( os.path.abspath( "database" ) ) as db:
+        #db.work_from_memory()
         while True:
             game = api.get_match()
             if not db.commit_game( game ):

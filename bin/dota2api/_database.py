@@ -1,20 +1,31 @@
 import logging
 import sqlite3
+import tempfile
+import os
 
+from threading import Lock
 from collections import defaultdict
 
 class Database( object ):
     def __init__( self, database ):
         self.database_dir = database
+        self.in_memory = False
+        self.lock = Lock()
         self._load_database()
 
     def __enter__( self ):
         return self
 
     def __exit__( self, type, val, traceback ):
+        if self.in_memory:
+            self.work_from_file( overwrite_original = True )
+
         self.db.close()
 
     def __del__( self ):
+        if self.in_memory:
+            self.work_from_file( overwrite_original = True )
+
         self.db.close()
 
     def _load_database( self ):
@@ -102,11 +113,60 @@ class Database( object ):
 
         return True
 
+    def work_from_memory( self ):
+        if self.in_memory:
+            logging.error( "Database is already in memory!" )
+            return
+
+        self.lock.acquire()
+        logging.info( "Moving database to memory" )
+        with tempfile.TemporaryFile( mode = "w+" ) as tmp:
+            for line in self.db.iterdump():
+                tmp.write( "{}\n".format( line ) )
+            self.db.close()
+            tmp.seek(0)
+
+            self.db = sqlite3.connect( ":memory:" )
+            self.db.cursor().executescript( tmp.read() )
+            self.db.commit()
+
+        self.in_memory = True
+        logging.info( "Successfully moved database in to memory" )
+        self.lock.release()
+
+    def work_from_file( self, overwrite_original = False ):
+        if not self.in_memory:
+            logging.error( "Database is already in a file!" )
+            return
+
+        self.lock.acquire()
+        logging.info( "Moving database from memory to a file" )
+        with tempfile.TemporaryFile( mode = "w+" ) as tmp:
+            for line in self.db.iterdump():
+                tmp.write( "{}\n".format( line ) )
+            self.db.close()
+            tmp.seek(0)
+
+            self.db = sqlite3.connect( self.database_dir + ".mem" )
+            self.db.cursor().executescript( tmp.read() )
+            self.db.commit()
+
+        if overwrite_original:
+            self.db.close()
+            os.remove( self.database_dir )
+            os.rename( self.database_dir + ".mem", self.database_dir )
+            self._load_database()
+
+        self.in_memory = False
+        logging.info( "Successfully moved database from memory back to a file" )
+        self.lock.release()
+
     def commit_game( self, game ):
         if not self._valid_game( game ):
             logging.warning( "An invalid game was submitted to the database!\n{}\n".format( game ) )
             return False
 
+        self.lock.acquire()
         try:
             cursor = self.db.cursor()
 
@@ -128,6 +188,8 @@ class Database( object ):
             self.db.rollback()
             logging.error( "A match insert failed. There was an error with the commit, rolling back." )
             raise
+        finally:
+            self.lock.release()
 
         return True
 
@@ -141,6 +203,8 @@ class Database( object ):
 
         data = None
         limit = 10 * limit          # since we get 10 results per match (10 heroes)
+
+        self.lock.acquire()
         try:
             cursor = self.db.cursor()
 
@@ -151,6 +215,8 @@ class Database( object ):
         except:
             logging.error( "A draft query failed. There was an error with the commit." )
             raise
+        finally:
+            self.lock.release()
 
         if data is not None:
             matches = defaultdict( dict )
@@ -173,6 +239,7 @@ class Database( object ):
 
     def raw_query( self, query ):
         data = None
+        self.lock.acquire()
 
         try:
             cursor = self.db.cursor()
@@ -185,6 +252,8 @@ class Database( object ):
             self.db.rollback()
             logging.error( "A raw query failed. There was an error with the commit." )
             raise
+        finally:
+            self.lock.release()
 
         return data
 

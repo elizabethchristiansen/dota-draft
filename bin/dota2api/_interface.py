@@ -62,21 +62,24 @@ class API( object ):
 
 		payload.update( self.base_payload )
 
-		r = requests.get( url, headers = headers, params = payload )
-		j = r.json()
+		for _ in range( 0, self.max_retry ):
+			r = requests.get( url, headers = headers, params = payload )
+
+			if r.status_code != 200:
+				logging.warning( "The initial sequence num query returned a non-200 status code ({}), retrying".format( r.status_code ) )
+				time.sleep( self.dota_api_timers["rate_limit_wait"] )
+				continue
+
+			break
+		else:
+			logging.error( "Could not initialize the Dota API parser (could not get seq num, status_code code: {})".format( r.status_code ) )
+			raise CouldNotInit
 
 		self.dota_api_timers["last_request"] = time.time()
 
-		if r.status_code == 200:
-			j = r.json()["result"]["matches"][0]
-			self.seq_from = int( j["match_seq_num"] )
-			logging.info( "Found the first seq num from the Dota API ({})".format( self.seq_from ) )
-		else:
-			logging.error( "Could not initialize the Dota API parser (could not get seq num, status_code code: {})".format( r.status_code ) )
-			if not self.retry:
-				raise CouldNotInit
-
-			self._get_current_seq_num()
+		j = r.json()["result"]["matches"][0]
+		self.seq_from = int( j["match_seq_num"] )
+		logging.info( "Found the first seq num from the Dota API ({})".format( self.seq_from ) )
 
 	def _parse_match_history( self, data ):
 		valid_matches = []
