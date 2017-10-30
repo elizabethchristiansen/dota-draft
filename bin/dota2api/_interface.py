@@ -46,8 +46,6 @@ class API( object ):
 
 		self.wait_increment = 20
 
-		self.dropped_games = 0
-
 		self._get_current_seq_num()
 
 		self.events = asyncio.get_event_loop()
@@ -101,8 +99,6 @@ class API( object ):
 
 			if valid:
 				valid_matches.append( i["match_id"] )
-			else:
-				self.dropped_games += 1
 
 		return valid_matches 
 
@@ -158,8 +154,7 @@ class API( object ):
 						continue
 
 					break
-
-			if res.status_code != 200:
+			else:
 				logging.error( "Could not poll the Dota API after {} retries. [URL: {}, status code: {}]".format( self.max_retry, res.url, res.status_code ) )
 				if not self.retry:
 					raise ServiceNotAvailable
@@ -277,11 +272,11 @@ class API( object ):
 					
 					self.open_api_timers["rate_limit_wait"] += self.wait_increment
 					continue
-				break
 
-			if res.status_code != 200:
+				break
+			else:
 				logging.error( "Match {} did not appear in the OAPI database after {} retries (status code {}), skipping to next match".format( match_id, self.max_retry, res.status_code ) )
-				continue
+				continue				
 
 			self.open_api_timers["rate_limit_wait"] = max( self.open_api_timers["rate_limit_wait_base"], self.open_api_timers["rate_limit_wait"] - self.wait_increment )
 			data = res.json()
@@ -289,8 +284,6 @@ class API( object ):
 
 			if match is not None:
 				self.match_info_queue.put( match )
-			else:
-				self.dropped_games += 1
 
 	def get_match( self ):
 		return self.match_info_queue.get()
