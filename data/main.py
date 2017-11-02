@@ -52,7 +52,6 @@ if __name__ == "__main__":
     num_matches = 0
     start = time.time()
     with Database( os.path.abspath( "database" ) ) as db:
-        #db.work_from_memory()
         while True:
             game = api.get_match()
             if not db.commit_game( game ):

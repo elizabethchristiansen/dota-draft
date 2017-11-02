@@ -190,8 +190,11 @@ class API( object ):
 			logging.error( "The OAPI URL {} returned JSON which did not contain the necessary fields".format( url ) )
 			return None
 
-		if game_mode != 22 or lobby != 7 or players != 10 or skill is None:
+		if game_mode != 22 or lobby != 7 or players != 10:
 			return None
+
+		if skill is None:
+			skill = 0
 
 		try:
 			salt = data["replay_salt"]
