@@ -7,29 +7,46 @@ from threading import Lock
 from collections import defaultdict
 
 class Database( object ):
-    def __init__( self, database ):
+    def __init__( self, database, mem_only = False ):
         self.database_dir = database
         self.in_memory = False
+        self.mem_only = mem_only
         self.lock = Lock()
+
+        logging.info( "Attempting to connect to {}".format( database ) )
         self._load_database()
+
+        if mem_only:
+            self.work_from_memory()
 
     def __enter__( self ):
         return self
 
     def __exit__( self, type, val, traceback ):
-        if self.in_memory:
+        if self.in_memory and not self.mem_only:
             self.work_from_file( overwrite_original = True )
 
         self.db.close()
 
     def __del__( self ):
-        if self.in_memory:
+        if self.in_memory and not self.mem_only:
             self.work_from_file( overwrite_original = True )
 
         self.db.close()
 
+    def __iter__( self ):
+        num_results = 1
+        self.match_id_start = 0
+        while num_results:
+            max_id, num_results, match = self.get_drafts( starting_from = self.match_id_start, limit = 1, array = True )
+            self.match_id_start = max_id + 1
+
+            if num_results:
+                yield ( match[0]["win_picks"], match[0]["loss_picks"] )
+
     def _load_database( self ):
         self.db = sqlite3.connect( self.database_dir )
+        logging.info( "Connected to the database ({})".format( self.database_dir ) )
 
         foreign_keys = "PRAGMA foreign_keys = 1"
 
@@ -59,6 +76,8 @@ class Database( object ):
         cursor.execute( create_table )
         cursor.execute( create_picks_table )
         self.db.commit()
+
+        logging.info( "Database initialization successful" )
 
     def _valid_game( self, game ):
         if type( game["match_id"] ) != int or game["match_id"] < 0:
@@ -135,8 +154,8 @@ class Database( object ):
         self.lock.release()
 
     def work_from_file( self, overwrite_original = False ):
-        if not self.in_memory:
-            logging.error( "Database is already in a file!" )
+        if not self.in_memory or self.mem_only:
+            logging.error( "Database is already in a file or is restricted to memory only mode!" )
             return
 
         self.lock.acquire()
@@ -166,6 +185,8 @@ class Database( object ):
             logging.warning( "An invalid game was submitted to the database!\n{}\n".format( game ) )
             return False
 
+        logging.info( "Committing a game to the database" )
+
         self.lock.acquire()
         try:
             cursor = self.db.cursor()
@@ -191,9 +212,10 @@ class Database( object ):
         finally:
             self.lock.release()
 
+        logging.info( "Successfully committed a game to the database!" )
         return True
 
-    def get_drafts( self, starting_from = 0, limit = 1 ):
+    def get_drafts( self, starting_from = 0, limit = 1, array = False ):
         if type( limit ) != int or type( starting_from ) != int:
             logging.error( "starting_from or limit were not integers! ({}, {})".format( starting_from, limit ) )
             raise ValueError
@@ -203,12 +225,13 @@ class Database( object ):
 
         data = None
         limit = 10 * limit          # since we get 10 results per match (10 heroes)
+        max_id = 0
 
         self.lock.acquire()
         try:
             cursor = self.db.cursor()
 
-            query = "SELECT match_info.match_id, match_info.winner, hero_picks.hero, hero_picks.team FROM match_info INNER JOIN hero_picks ON match_info.match_id = hero_picks.match_id WHERE match_info.match_id >= ? ORDER BY match_info.match_id ASC LIMIT ?"
+            query = "SELECT match_info.match_id, match_info.winner, hero_picks.hero, hero_picks.team FROM match_info INNER JOIN hero_picks ON match_info.match_id = hero_picks.match_id WHERE match_info.match_id >= ? LIMIT ?"
             cursor.execute( query, ( starting_from, limit ) )
 
             data = cursor.fetchall()
@@ -233,9 +256,35 @@ class Database( object ):
                 else:
                     match["loss_picks"].append( hero )
 
+                if match_id > max_id:
+                    max_id = match_id
+
             data = matches
 
-        return data
+        if array:
+            data = [ v for _, v in data.items() ]
+
+        num_results = len( data )
+
+        return ( max_id, num_results, data )
+
+    def get_total_examples( self ):
+        self.lock.acquire()
+        try:
+            cursor = self.db.cursor()
+
+            query = "SELECT COUNT(*) FROM match_info"
+            cursor.execute( query )
+
+            data = cursor.fetchall()
+        except:
+            logging.error( "A draft query failed. There was an error with the commit." )
+            raise
+        finally:
+            self.lock.release()
+
+        count = int( data[0][0] )
+        return count
 
     def raw_query( self, query ):
         data = None
@@ -256,4 +305,7 @@ class Database( object ):
             self.lock.release()
 
         return data
+
+    def reset_generator( self ):
+        self.match_id_start = 0
 
