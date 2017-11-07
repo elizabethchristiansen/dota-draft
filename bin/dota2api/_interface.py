@@ -123,64 +123,70 @@ class API( object ):
 
 	async def _get_matches( self ):
 		while True:
-			requested = 100
-			headers = self.base_headers
-			payload = { "start_at_match_seq_num": self.seq_from, "matches_requested": requested }
-			payload.update( self.base_payload )
-			url = self.base_dota_url + "GetMatchHistoryBySequenceNum/v1/"
+			try:
 
-			for _ in range( 0, self.max_retry ):
-				res = await self._dapi_request( url, headers, payload )
+				requested = 100
+				headers = self.base_headers
+				payload = { "start_at_match_seq_num": self.seq_from, "matches_requested": requested }
+				payload.update( self.base_payload )
+				url = self.base_dota_url + "GetMatchHistoryBySequenceNum/v1/"
 
-				if res.status_code != 200:
-					if res.status_code == 429:
-						logging.warning( "We are being rate limited on the Dota API, waiting for {} seconds".format( self.dota_api_timers["rate_limit_wait"] ) )
-					elif res.status_code == 503 or res.status_code == 500:
-						logging.error( "The Dota API is down or otherwise not responding, waiting for {} seconds".format( self.dota_api_timers["rate_limit_wait"] ) )
-						if not self.retry:
-							raise ServiceNotAvailable
-					elif res.status_code == 401 or res.status_code == 403:
-						logging.error( "Our Dota API authentication key seems to be wrong or we have otherwise been blocked from the service, waiting for {} seconds".format( self.dota_api_timers["rate_limit_wait"] ) )
-						if not self.retry:
-							raise InvalidAuthKey
+				for _ in range( 0, self.max_retry ):
+					res = await self._dapi_request( url, headers, payload )
 
-					await asyncio.sleep( self.dota_api_timers["rate_limit_wait"] )
-					self.dota_api_timers["rate_limit_wait"] += self.wait_increment
-					continue
-				else:
-					logging.info( "Retrieved from Dota API URL {}".format( res.url ) )
-					data = res.json()
+					if res.status_code != 200:
+						if res.status_code == 429:
+							logging.warning( "We are being rate limited on the Dota API, waiting for {} seconds".format( self.dota_api_timers["rate_limit_wait"] ) )
+						elif res.status_code == 503 or res.status_code == 500:
+							logging.error( "The Dota API is down or otherwise not responding, waiting for {} seconds".format( self.dota_api_timers["rate_limit_wait"] ) )
+							if not self.retry:
+								raise ServiceNotAvailable
+						elif res.status_code == 401 or res.status_code == 403:
+							logging.error( "Our Dota API authentication key seems to be wrong or we have otherwise been blocked from the service, waiting for {} seconds".format( self.dota_api_timers["rate_limit_wait"] ) )
+							if not self.retry:
+								raise InvalidAuthKey
 
-					num_results = len( data["result"]["matches"] )
-					if num_results > 0:
-						self.seq_from += min( num_results, requested )
+						await asyncio.sleep( self.dota_api_timers["rate_limit_wait"] )
+						self.dota_api_timers["rate_limit_wait"] += self.wait_increment
+						continue
 					else:
-						logging.info( "We are going faster than the Dota API, waiting for {} seconds".format( self.dota_api_timers["empty_wait_seconds"] ) )
-						await asyncio.sleep( self.dota_api_timers["empty_wait_seconds"] )
-						continue
+						logging.info( "Retrieved from Dota API URL {}".format( res.url ) )
+						data = res.json()
 
-					break
-			else:
-				logging.error( "Could not poll the Dota API after {} retries. [URL: {}, status code: {}]".format( self.max_retry, res.url, res.status_code ) )
-				if not self.retry:
-					raise ServiceNotAvailable
+						num_results = len( data["result"]["matches"] )
+						if num_results > 0:
+							self.seq_from += min( num_results, requested )
+						else:
+							logging.info( "We are going faster than the Dota API, waiting for {} seconds".format( self.dota_api_timers["empty_wait_seconds"] ) )
+							await asyncio.sleep( self.dota_api_timers["empty_wait_seconds"] )
+							continue
 
-				await asyncio.sleep( self.dota_api_timers["continued_error_sleep"] )
-				logging.status( "Dota API thread woke up after previous errors (slept for {} seconds)".format( self.dota_api_timers["continued_error_sleep"] ) )
-				continue
+						break
+				else:
+					logging.error( "Could not poll the Dota API after {} retries. [URL: {}, status code: {}]".format( self.max_retry, res.url, res.status_code ) )
+					if not self.retry:
+						raise ServiceNotAvailable
 
-			self.dota_api_timers["rate_limit_wait"] = max( self.dota_api_timers["rate_limit_wait_base"], self.dota_api_timers["rate_limit_wait"] - self.wait_increment )
-			valid_matches = self._parse_match_history( data )
+					await asyncio.sleep( self.dota_api_timers["continued_error_sleep"] )
+					logging.status( "Dota API thread woke up after previous errors (slept for {} seconds)".format( self.dota_api_timers["continued_error_sleep"] ) )
+					continue
 
-			for i in valid_matches:
-				while True:
-					try:
-						await asyncio.wait_for( self.matches_queue.put( i ), self.dota_api_timers["queue_warning"] )
-					except asyncio.TimeoutError:
-						logging.warning( "The asyncio match queue has been full for {} seconds [Dota API can't put]!".format( self.dota_api_timers["full_queue_warning"] ) )
-						continue
+				self.dota_api_timers["rate_limit_wait"] = max( self.dota_api_timers["rate_limit_wait_base"], self.dota_api_timers["rate_limit_wait"] - self.wait_increment )
+				valid_matches = self._parse_match_history( data )
 
-					break
+				for i in valid_matches:
+					while True:
+						try:
+							await asyncio.wait_for( self.matches_queue.put( i ), self.dota_api_timers["queue_warning"] )
+						except asyncio.TimeoutError:
+							logging.warning( "The asyncio match queue has been full for {} seconds [Dota API can't put]!".format( self.dota_api_timers["full_queue_warning"] ) )
+							continue
+
+						break
+
+			except BaseException as e:
+				logging.exception( "We encountered a fatal error ({}) in the Dota API puller. Sleeping for a long time and trying again.".format( str( e ) ) )
+				await ascynio.sleep( 1800 )
 
 	def _parse_match( self, data, url ):
 		try:
@@ -267,53 +273,59 @@ class API( object ):
 	async def _get_matches_info( self ):
 		while True:
 			try:
-				match_id = await asyncio.wait_for( self.matches_queue.get(), self.open_api_timers["queue_warning"] )
-			except asyncio.TimeoutError:
-				logging.warning( "The asyncio queue has been empty for {} seconds [OAPI can't pull]!".format( self.open_api_timers["queue_warning"] ) )
-				continue
 
-			url = self.base_oapi_url + "matches/" + str( match_id )
-
-			for _ in range( 0, self.max_retry ):
-				res = await self._oapi_request( url )
-
-				if res.status_code != 200:
-					if res.status_code == 404:
-						logging.warning( "Match {} ({}) does not yet exist in the OAPI database, sleeping".format( match_id, res.url ) )
-						await asyncio.sleep( self.open_api_timers["404_sleep"] )
-					elif res.status_code == 429:	# I am guessing this is rate limiting since it is the same status code as the dota api, could be wrong
-						logging.warning( "We are being rate limited by the OAPI, waiting for {} seconds for URL {}".format( self.open_api_timers["rate_limit_wait"], res.url ) )
-						await asyncio.sleep( self.open_api_timers["rate_limit_wait"] )
-					else:
-						logging.error( "There was an undefined error in the OAPI call to {} (status code: {}), sleeping for {} seconds".format( res.url, res.status_code, self.open_api_timers["rate_limit_wait"] ) )
-						if not self.retry:
-							raise OAPIError
-
-						await asyncio.sleep( self.open_api_timers["rate_limit_wait"] )
-
-					self.open_api_timers["rate_limit_wait"] += self.wait_increment
+				try:
+					match_id = await asyncio.wait_for( self.matches_queue.get(), self.open_api_timers["queue_warning"] )
+				except asyncio.TimeoutError:
+					logging.warning( "The asyncio queue has been empty for {} seconds [OAPI can't pull]!".format( self.open_api_timers["queue_warning"] ) )
 					continue
 
-				break
-			else:
-				logging.error( "Match {} did not appear in the OAPI database after {} retries (status code {}), skipping to next match".format( match_id, self.max_retry, res.status_code ) )
-				continue
+				url = self.base_oapi_url + "matches/" + str( match_id )
 
-			self.open_api_timers["rate_limit_wait"] = max( self.open_api_timers["rate_limit_wait_base"], self.open_api_timers["rate_limit_wait"] - self.wait_increment )
-			data = res.json()
-			match = self._parse_match( data, res.url )
+				for _ in range( 0, self.max_retry ):
+					res = await self._oapi_request( url )
 
-			if match is not None:
-				while True:
-					try:
-						self.match_info_queue.put( match, timeout = self.open_api_timers["queue_warning"] )
-					except queue.Full:
-						logging.warning( "The match queue has been full for {} seconds [OAPI can't put]!".format( self.open_api_timers["queue_warning"] ) )
+					if res.status_code != 200:
+						if res.status_code == 404:
+							logging.warning( "Match {} ({}) does not yet exist in the OAPI database, sleeping".format( match_id, res.url ) )
+							await asyncio.sleep( self.open_api_timers["404_sleep"] )
+						elif res.status_code == 429:	# I am guessing this is rate limiting since it is the same status code as the dota api, could be wrong
+							logging.warning( "We are being rate limited by the OAPI, waiting for {} seconds for URL {}".format( self.open_api_timers["rate_limit_wait"], res.url ) )
+							await asyncio.sleep( self.open_api_timers["rate_limit_wait"] )
+						else:
+							logging.error( "There was an undefined error in the OAPI call to {} (status code: {}), sleeping for {} seconds".format( res.url, res.status_code, self.open_api_timers["rate_limit_wait"] ) )
+							if not self.retry:
+								raise OAPIError
+
+							await asyncio.sleep( self.open_api_timers["rate_limit_wait"] )
+
+						self.open_api_timers["rate_limit_wait"] += self.wait_increment
 						continue
 
 					break
+				else:
+					logging.error( "Match {} did not appear in the OAPI database after {} retries (status code {}), skipping to next match".format( match_id, self.max_retry, res.status_code ) )
+					continue
 
-			self.matches_queue.task_done()
+				self.open_api_timers["rate_limit_wait"] = max( self.open_api_timers["rate_limit_wait_base"], self.open_api_timers["rate_limit_wait"] - self.wait_increment )
+				data = res.json()
+				match = self._parse_match( data, res.url )
+
+				if match is not None:
+					while True:
+						try:
+							self.match_info_queue.put( match, timeout = self.open_api_timers["queue_warning"] )
+						except queue.Full:
+							logging.warning( "The match queue has been full for {} seconds [OAPI can't put]!".format( self.open_api_timers["queue_warning"] ) )
+							continue
+
+						break
+
+				self.matches_queue.task_done()
+
+			except BaseException as e:
+				logging.exception( "We encountered a fatal error ({}) in the OAPI puller. Sleeping for a long time and trying again.".format( str( e ) ) )
+				await ascynio.sleep( 1800 )
 
 	def get_match( self ):
 		while True:
