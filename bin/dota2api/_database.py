@@ -6,6 +6,7 @@ import os
 from threading import Lock
 from collections import defaultdict
 
+
 class Database( object ):
     def __init__( self, database, mem_only = False ):
         self.database_dir = database
@@ -24,15 +25,15 @@ class Database( object ):
 
     def __exit__( self, type, val, traceback ):
         if self.in_memory and not self.mem_only:
-            self.work_from_file( overwrite_original = True )
-
-        self.db.close()
+            self.work_from_file( overwrite_original = True, reopen = False )
+        else:
+            self.db.close()
 
     def __del__( self ):
         if self.in_memory and not self.mem_only:
-            self.work_from_file( overwrite_original = True )
-
-        self.db.close()
+            self.work_from_file( overwrite_original = True, reopen = False )
+        else:
+            self.db.close()
 
     def _load_database( self ):
         self.db = sqlite3.connect( self.database_dir )
@@ -41,21 +42,21 @@ class Database( object ):
         foreign_keys = "PRAGMA foreign_keys = 1"
 
         create_table = '''CREATE TABLE IF NOT EXISTS match_info ( 
-            match_id INTEGER PRIMARY KEY NOT NULL, 
-            match_time INTEGER, 
-            winner INTEGER, 
-            duration INTEGER, 
-            r_score INTEGER, 
+            match_id INTEGER PRIMARY KEY NOT NULL,
+            match_time INTEGER,
+            winner INTEGER,
+            duration INTEGER,
+            r_score INTEGER,
             d_score INTEGER,
-            skill INTEGER, 
+            skill INTEGER,
             region INTEGER,
-            salt INTEGER, 
-            replay TEXT, 
-            throw INTEGER, 
+            salt INTEGER,
+            replay TEXT,
+            throw INTEGER,
             loss INTEGER )'''
 
         create_picks_table = '''CREATE TABLE IF NOT EXISTS hero_picks ( 
-            match_id INTEGER NOT NULL, 
+            match_id INTEGER NOT NULL,
             team INTEGER,
             hero INTEGER,
             PRIMARY KEY (match_id, hero),
@@ -122,6 +123,22 @@ class Database( object ):
 
         return True
 
+    def reload( self ):
+        self.lock.acquire()
+        was_in_memory = self.in_memory
+
+        if self.in_memory and not self.mem_only:
+            self.work_from_file( overwrite_original = True, reopen = False )
+
+        self.db.close()
+        self._load_database()
+
+        if self.mem_only or was_in_memory:
+            self.work_from_memory()
+
+        logging.info( "Successfully reloaded the database connection" )
+        self.lock.release()
+
     def work_from_memory( self ):
         if self.in_memory:
             logging.error( "Database is already in memory!" )
@@ -146,7 +163,7 @@ class Database( object ):
         logging.info( "Successfully moved database in to memory" )
         self.lock.release()
 
-    def work_from_file( self, overwrite_original = False ):
+    def work_from_file( self, overwrite_original = False, reopen = True ):
         if not self.in_memory or self.mem_only:
             logging.error( "Database is already in a file or is restricted to memory only mode!" )
             return
@@ -167,7 +184,8 @@ class Database( object ):
             self.db.close()
             os.remove( self.database_dir )
             os.rename( self.database_dir + ".mem", self.database_dir )
-            self._load_database()
+            if reopen:
+                self._load_database()
 
         self.in_memory = False
         logging.info( "Successfully moved database from memory back to a file" )
@@ -208,7 +226,7 @@ class Database( object ):
         logging.info( "Successfully committed a game to the database!" )
         return True
 
-    def get_drafts( self, starting_from = 0, limit = 1, array = False, skill = 3 ):
+    def get_drafts( self, starting_from = 0, limit = 1, array = False ):
         if type( limit ) != int or type( starting_from ) != int:
             logging.error( "starting_from or limit were not integers! ({}, {})".format( starting_from, limit ) )
             raise ValueError
@@ -298,7 +316,3 @@ class Database( object ):
             self.lock.release()
 
         return data
-
-    def reset_generator( self ):
-        self.match_id_start = 0
-
