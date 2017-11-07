@@ -34,16 +34,6 @@ class Database( object ):
 
         self.db.close()
 
-    def __iter__( self ):
-        num_results = 1
-        self.match_id_start = 0
-        while num_results:
-            max_id, num_results, match = self.get_drafts( starting_from = self.match_id_start, limit = 1, array = True )
-            self.match_id_start = max_id + 1
-
-            if num_results:
-                yield ( match[0]["win_picks"], match[0]["loss_picks"] )
-
     def _load_database( self ):
         self.db = sqlite3.connect( self.database_dir )
         logging.info( "Connected to the database ({})".format( self.database_dir ) )
@@ -98,7 +88,7 @@ class Database( object ):
         if type( game["dire_score"] ) != int or game["dire_score"] < 0:
             return False
 
-        if type( game["skill"] ) != int or ( game["skill"] < 1 or game["skill"] > 3 ):
+        if type( game["skill"] ) != int or ( game["skill"] < 0 or game["skill"] > 3 ):
             return False
 
         if type( game["region"] ) != int or game["region"] < 0:
@@ -145,7 +135,10 @@ class Database( object ):
             self.db.close()
             tmp.seek(0)
 
-            self.db = sqlite3.connect( ":memory:" )
+            if self.mem_only:
+                self.db = sqlite3.connect( ":memory:", check_same_thread = False )
+            else:
+                self.db = sqlite3.connect( ":memory:" )
             self.db.cursor().executescript( tmp.read() )
             self.db.commit()
 
@@ -215,7 +208,7 @@ class Database( object ):
         logging.info( "Successfully committed a game to the database!" )
         return True
 
-    def get_drafts( self, starting_from = 0, limit = 1, array = False ):
+    def get_drafts( self, starting_from = 0, limit = 1, array = False, skill = 3 ):
         if type( limit ) != int or type( starting_from ) != int:
             logging.error( "starting_from or limit were not integers! ({}, {})".format( starting_from, limit ) )
             raise ValueError
@@ -231,7 +224,7 @@ class Database( object ):
         try:
             cursor = self.db.cursor()
 
-            query = "SELECT match_info.match_id, match_info.winner, hero_picks.hero, hero_picks.team FROM match_info INNER JOIN hero_picks ON match_info.match_id = hero_picks.match_id WHERE match_info.match_id >= ? LIMIT ?"
+            query = "SELECT match_info.match_id, match_info.winner, hero_picks.hero, hero_picks.team FROM match_info INNER JOIN hero_picks ON match_info.match_id = hero_picks.match_id WHERE match_info.match_id >= ? ORDER BY match_info.match_id ASC LIMIT ?"
             cursor.execute( query, ( starting_from, limit ) )
 
             data = cursor.fetchall()

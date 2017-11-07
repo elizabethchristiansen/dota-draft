@@ -9,6 +9,7 @@ import os
 
 STATUS_LEVEL = 35
 
+
 class log_message_count( object ):
     def __init__( self, method ):
         self.method = method
@@ -18,17 +19,20 @@ class log_message_count( object ):
         self.counter += 1
         return self.method( *args, **kwargs )
 
+
 def status_log( message, *args, **kwargs ):
     logging.log( STATUS_LEVEL, message, *args, **kwargs )
 
+
 def init_logging():
-    logging.basicConfig( filename = "scraper.log", filemode = "a", format = "%(asctime)s : %(levelname)s : %(message)s", level = logging.WARNING )
+    logging.basicConfig( format = "%(asctime)s : %(levelname)s : %(message)s", level = logging.INFO )
     logging.error = log_message_count( logging.error )
     logging.warning = log_message_count( logging.warning )
 
     logging.addLevelName( STATUS_LEVEL, "STATUS" )
     setattr( logging, "STATUS", STATUS_LEVEL )
     setattr( logging, "status", status_log )
+
 
 def exit_gracefully( sig, frame ):
     loop.stop()
@@ -57,7 +61,7 @@ if __name__ == "__main__":
             if not db.commit_game( game ):
                 continue
 
-            logging.info( "Found a valid game, committed to the database" )
+            logging.info( "Found a valid game, committed match_id {} the database".format( game["match_id"] ) )
             num_matches += 1
 
             error_count = logging.error.counter
@@ -66,4 +70,3 @@ if __name__ == "__main__":
             if num_matches % 100 == 0:
                 t_since_start = time.time() - start
                 logging.status( "There have been {} errors and {} warnings since start ({} non-messages) at a rate of {}s/{}s or {}/{} per successful request".format( error_count, warning_count, num_matches, round( error_count / t_since_start, 3 ), round( warning_count / t_since_start, 3 ), round( error_count / num_matches, 3 ), round( error_count / num_matches, 3 ) ) )
-

@@ -7,6 +7,7 @@ import queue
 from functools import partial
 from ._errors import ServiceNotAvailable, InvalidAuthKey, RateLimitActive, CouldNotInit, OAPIError
 
+
 class API( object ):
 	def __init__( self, key, retry_on_error = True, max_retry = 5, data_format = "json", lang = "en" ):
 		self.key = key
@@ -33,6 +34,7 @@ class API( object ):
 			"rate_limit_wait":			30,
 			"rate_limit_wait_base":		30,
 			"empty_wait_seconds": 		30,
+			"queue_warning":			600,
 			"continued_error_sleep":	600
 		}
 
@@ -42,6 +44,7 @@ class API( object ):
 			"rate_limit_wait":			30,
 			"rate_limit_wait_base":		30,
 			"404_sleep":				60,
+			"queue_warning":			600
 		}
 
 		self.wait_increment = 20
@@ -103,7 +106,7 @@ class API( object ):
 			if valid:
 				valid_matches.append( i["match_id"] )
 
-		return valid_matches 
+		return valid_matches
 
 	async def _dapi_request( self, url, headers, payload ):
 		with await self.dotaapi_lock:
@@ -170,7 +173,14 @@ class API( object ):
 			valid_matches = self._parse_match_history( data )
 
 			for i in valid_matches:
-				await self.matches_queue.put( i )
+				while True:
+					try:
+						await asyncio.wait_for( self.matches_queue.put( i ), self.dota_api_timers["queue_warning"] )
+					except asyncio.TimeoutError:
+						logging.warning( "The asyncio match queue has been full for {} seconds [Dota API can't put]!".format( self.dota_api_timers["full_queue_warning"] ) )
+						continue
+
+					break
 
 	def _parse_match( self, data, url ):
 		try:
@@ -250,13 +260,18 @@ class API( object ):
 			future_res = self.events.run_in_executor( None, requests.get, url )
 			self.open_api_timers["last_request"] = time.time()
 			logging.info( "Submitting request to OAPI URL {}".format( url ) )
-		
+
 		res = await future_res
 		return res
 
 	async def _get_matches_info( self ):
 		while True:
-			match_id = await self.matches_queue.get()
+			try:
+				match_id = await asyncio.wait_for( self.matches_queue.get(), self.open_api_timers["queue_warning"] )
+			except asyncio.TimeoutError:
+				logging.warning( "The asyncio queue has been empty for {} seconds [OAPI can't pull]!".format( self.open_api_timers["queue_warning"] ) )
+				continue
+
 			url = self.base_oapi_url + "matches/" + str( match_id )
 
 			for _ in range( 0, self.max_retry ):
@@ -275,24 +290,40 @@ class API( object ):
 							raise OAPIError
 
 						await asyncio.sleep( self.open_api_timers["rate_limit_wait"] )
-					
+
 					self.open_api_timers["rate_limit_wait"] += self.wait_increment
 					continue
 
 				break
 			else:
 				logging.error( "Match {} did not appear in the OAPI database after {} retries (status code {}), skipping to next match".format( match_id, self.max_retry, res.status_code ) )
-				continue				
+				continue
 
 			self.open_api_timers["rate_limit_wait"] = max( self.open_api_timers["rate_limit_wait_base"], self.open_api_timers["rate_limit_wait"] - self.wait_increment )
 			data = res.json()
 			match = self._parse_match( data, res.url )
 
 			if match is not None:
-				self.match_info_queue.put( match )
+				while True:
+					try:
+						self.match_info_queue.put( match, timeout = self.open_api_timers["queue_warning"] )
+					except queue.Full:
+						logging.warning( "The match queue has been full for {} seconds [OAPI can't put]!".format( self.open_api_timers["queue_warning"] ) )
+						continue
+
+					break
 
 	def get_match( self ):
-		return self.match_info_queue.get()
+		while True:
+			try:
+				item = self.match_info_queue.get( timeout = self.open_api_timers["queue_warning"] )
+			except queue.Full:
+				logging.warning( "The match queue has been empty for {} seconds [Database can't pull]!".format( self.open_api_timers["queue_warning"] ) )
+				continue
+
+			break
+
+		return item
 
 	def run( self ):
 		logging.info( "Initializing event loop" )
