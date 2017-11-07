@@ -1,4 +1,4 @@
-from dota2api import API, Database
+from dota2api import API, Database, ReplayDownloader
 
 import asyncio
 import logging
@@ -6,6 +6,7 @@ import signal
 import sys
 import time
 import os
+import queue
 
 STATUS_LEVEL = 35
 
@@ -36,6 +37,8 @@ def init_logging():
 
 def exit_gracefully( sig, frame ):
     loop.stop()
+    replay.quit()
+    replay.join()
 
     logging.status( "--- Caught {}, Exiting ---".format( signal.Signals(sig).name ) )
     sys.exit(0)
@@ -50,12 +53,16 @@ if __name__ == "__main__":
     api = API( key = key )
     future = loop.run_in_executor( None, api.run )
 
+    replay_queue = queue.Queue()
+    replay = ReplayDownloader( replay_queue )
+
     signal.signal( signal.SIGINT, exit_gracefully )
     signal.signal( signal.SIGTERM, exit_gracefully )
 
     num_matches = 0
     start = time.time()
     with Database( os.path.abspath( "database" ) ) as db:
+        replay.start()
         while True:
             game = api.get_match()
             if not db.commit_game( game ):
@@ -70,3 +77,7 @@ if __name__ == "__main__":
             if num_matches % 100 == 0:
                 t_since_start = time.time() - start
                 logging.status( "There have been {} errors and {} warnings since start ({} non-messages) at a rate of {}s/{}s or {}/{} per successful request".format( error_count, warning_count, num_matches, round( error_count / t_since_start, 3 ), round( warning_count / t_since_start, 3 ), round( error_count / num_matches, 3 ), round( error_count / num_matches, 3 ) ) )
+
+            if game["replay"] is not None:
+                logging.info( "Found a match ({}) with replay data, passing to the downloader!".format( game["match_id"] ) )
+                replay_queue.put( ( game["match_id"], game["replay"] ) )

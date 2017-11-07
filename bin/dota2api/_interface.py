@@ -313,16 +313,19 @@ class API( object ):
 
 					break
 
+			self.matches_queue.task_done()
+
 	def get_match( self ):
 		while True:
 			try:
 				item = self.match_info_queue.get( timeout = self.open_api_timers["queue_warning"] )
-			except queue.Full:
+			except queue.Empty:
 				logging.warning( "The match queue has been empty for {} seconds [Database can't pull]!".format( self.open_api_timers["queue_warning"] ) )
 				continue
 
 			break
 
+		self.match_info_queue.task_done()
 		return item
 
 	def run( self ):
