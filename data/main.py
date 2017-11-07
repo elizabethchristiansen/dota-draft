@@ -54,7 +54,8 @@ if __name__ == "__main__":
     future = loop.run_in_executor( None, api.run )
 
     replay_queue = queue.Queue()
-    replay = ReplayDownloader( replay_queue )
+    replay_dir = "/data/scripts/dota/draft/data/"
+    replay = ReplayDownloader( replay_queue, replay_dir )
 
     signal.signal( signal.SIGINT, exit_gracefully )
     signal.signal( signal.SIGTERM, exit_gracefully )

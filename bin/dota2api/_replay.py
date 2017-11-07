@@ -8,10 +8,11 @@ import queue
 
 
 class ReplayDownloader( threading.Thread ):
-    def __init__( self, queue ):
+    def __init__( self, queue, replay_dir = "" ):
         super( ReplayDownloader, self ).__init__()
 
         self.queue = queue
+        self.dir = replay_dir
         self.rate = 10
         self.rate_additional = 30
         self.rate_additional_base = self.rate_additional
@@ -38,7 +39,7 @@ class ReplayDownloader( threading.Thread ):
                     r = requests.get( url )
                     if r.status_code == 200:
                         name = str( match_id ) + ".dem.bz2"
-                        path = os.path.abspath( "replays/" + name )
+                        path = os.path.abspath( self.dir + "replays/" + name )
                         with open( path, "wb" ) as rep:
                             rep.write( r.content )
 
