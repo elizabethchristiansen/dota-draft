@@ -25,7 +25,7 @@ def status_log( message, *args, **kwargs ):
 
 
 def init_logging():
-    logging.basicConfig( format = "%(asctime)s : %(levelname)s : %(message)s", level = logging.INFO )
+    logging.basicConfig( filename = "scraper.log", filemode = "a", format = "%(asctime)s : %(levelname)s : %(message)s", level = logging.WARNING )
     logging.error = log_message_count( logging.error )
     logging.warning = log_message_count( logging.warning )
 
