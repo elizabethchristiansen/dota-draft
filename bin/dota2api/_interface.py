@@ -186,7 +186,8 @@ class API( object ):
 
 			except BaseException as e:
 				logging.exception( "We encountered a fatal error ({}) in the Dota API puller. Sleeping for a long time and trying again.".format( str( e ) ) )
-				await ascynio.sleep( 1800 )
+				await asyncio.sleep( 1800 )
+				logging.status( "Waking the Dota API puller after a fatal error sleep" )
 
 	def _parse_match( self, data, url ):
 		try:
@@ -325,7 +326,8 @@ class API( object ):
 
 			except BaseException as e:
 				logging.exception( "We encountered a fatal error ({}) in the OAPI puller. Sleeping for a long time and trying again.".format( str( e ) ) )
-				await ascynio.sleep( 1800 )
+				await asyncio.sleep( 1800 )
+				logging.status( "Waking the OAPI puller after a fatal error sleep" )
 
 	def get_match( self ):
 		while True:
@@ -341,7 +343,7 @@ class API( object ):
 		return item
 
 	def run( self ):
-		logging.info( "Initializing event loop" )
+		logging.info( "Initializing API poller event loop" )
 		self.events.create_task( self._get_matches() )
 		self.events.create_task( self._get_matches_info() )
 		self.events.create_task( self._get_matches_info() )

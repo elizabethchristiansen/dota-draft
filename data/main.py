@@ -37,8 +37,6 @@ def init_logging():
 
 def exit_gracefully( sig, frame ):
     loop.stop()
-    replay.quit()
-    replay.join()
 
     logging.status( "--- Caught {}, Exiting ---".format( signal.Signals(sig).name ) )
     sys.exit(0)
@@ -51,11 +49,11 @@ if __name__ == "__main__":
     loop = asyncio.get_event_loop()
 
     api = API( key = key )
-    future = loop.run_in_executor( None, api.run )
-
-    replay_queue = queue.Queue()
     replay_dir = "/data/scripts/dota/draft/data/"
-    replay = ReplayDownloader( replay_queue, replay_dir )
+    replay = ReplayDownloader( replay_dir )
+
+    api_future = loop.run_in_executor( None, api.run )
+    replay_future = loop.run_in_executor( None, replay.run )
 
     signal.signal( signal.SIGINT, exit_gracefully )
     signal.signal( signal.SIGTERM, exit_gracefully )
@@ -63,7 +61,6 @@ if __name__ == "__main__":
     num_matches = 0
     start = time.time()
     with Database( os.path.abspath( "database" ) ) as db:
-        replay.start()
         while True:
             game = api.get_match()
             if not db.commit_game( game ):
@@ -81,4 +78,4 @@ if __name__ == "__main__":
 
             if game["replay"] is not None:
                 logging.info( "Found a match ({}) with replay data, passing to the downloader!".format( game["match_id"] ) )
-                replay_queue.put( ( game["match_id"], game["replay"] ) )
+                replay.add_game( ( game["match_id"], game["replay"] ) )
