@@ -66,7 +66,7 @@ if __name__ == "__main__":
             if not db.commit_game( game ):
                 continue
 
-            logging.info( "Found a valid game, committed match_id {} the database".format( game["match_id"] ) )
+            logging.info( "Found a valid game, committing match_id {} the database".format( game["match_id"] ) )
             num_matches += 1
 
             error_count = logging.error.counter

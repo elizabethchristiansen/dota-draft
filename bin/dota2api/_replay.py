@@ -3,12 +3,11 @@ import os
 import logging
 import sys
 import asyncio
-import queue
 
 
 class ReplayDownloader( object ):
     def __init__( self, replay_dir = "" ):
-        self.queue = queue.Queue()
+        self.queue = asyncio.Queue()
         self.dir = replay_dir
         self.rate = 10
         self.rate_additional = 30
@@ -61,7 +60,7 @@ class ReplayDownloader( object ):
                 logging.status( "Waking the replay downloader after a fatal error sleep" )
 
     def add_game( self, game ):
-        self.queue.put( game )
+        self.queue.put_nowait( game )
 
     def run( self ):
         logging.info( "Initializing replay downloader event loop" )
