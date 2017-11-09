@@ -35,7 +35,8 @@ class API( object ):
 			"rate_limit_wait_base":		30,
 			"empty_wait_seconds": 		30,
 			"queue_warning":			600,
-			"continued_error_sleep":	600
+			"continued_error_sleep":	600,
+			"heartbeat":				0
 		}
 
 		self.open_api_timers = {
@@ -44,7 +45,8 @@ class API( object ):
 			"rate_limit_wait":			30,
 			"rate_limit_wait_base":		30,
 			"404_sleep":				60,
-			"queue_warning":			600
+			"queue_warning":			600,
+			"heartbeat":				0
 		}
 
 		self.wait_increment = 20
@@ -124,6 +126,9 @@ class API( object ):
 	async def _get_matches( self ):
 		while True:
 			try:
+				if ( time.time() - self.dota_api_timers["heartbeat"] ) >= 3600:
+					logging.status( "[Dota API] I'm still alive! Queue has {} items.".format( self.matches_queue.qsize() ) )
+					self.dota_api_timers["heartbeat"] = time.time()
 
 				requested = 100
 				headers = self.base_headers
@@ -271,14 +276,21 @@ class API( object ):
 		res = await future_res
 		return res
 
-	async def _get_matches_info( self ):
+	async def _get_matches_info( self, tid = None ):
+		if tid is None:
+			tid = 0
+		tid = "Instance-" + str( tid )
+
 		while True:
 			try:
+				if ( time.time() - self.open_api_timers["heartbeat"] ) >= 3600:
+					logging.status( "[OAPI {}] I'm still alive! Queue has ~{} items.".format( tid, self.match_info_queue.qsize() ) )
+					self.open_api_timers["heartbeat"] = time.time()
 
 				try:
 					match_id = await asyncio.wait_for( self.matches_queue.get(), self.open_api_timers["queue_warning"] )
 				except asyncio.TimeoutError:
-					logging.warning( "The asyncio queue has been empty for {} seconds [OAPI can't pull]!".format( self.open_api_timers["queue_warning"] ) )
+					logging.warning( "The asyncio queue has been empty for {} seconds [OAPI {} can't pull]!".format( self.open_api_timers["queue_warning"], tid ) )
 					continue
 
 				url = self.base_oapi_url + "matches/" + str( match_id )
@@ -288,13 +300,13 @@ class API( object ):
 
 					if res.status_code != 200:
 						if res.status_code == 404:
-							logging.warning( "Match {} ({}) does not yet exist in the OAPI database, sleeping".format( match_id, res.url ) )
+							logging.warning( "Match {} ({}) does not yet exist in the OAPI database, {} is sleeping".format( match_id, res.url, tid ) )
 							await asyncio.sleep( self.open_api_timers["404_sleep"] )
 						elif res.status_code == 429:	# I am guessing this is rate limiting since it is the same status code as the dota api, could be wrong
-							logging.warning( "We are being rate limited by the OAPI, waiting for {} seconds for URL {}".format( self.open_api_timers["rate_limit_wait"], res.url ) )
+							logging.warning( "We are being rate limited by the OAPI, {} is waiting for {} seconds for URL {}".format( tid, self.open_api_timers["rate_limit_wait"], res.url ) )
 							await asyncio.sleep( self.open_api_timers["rate_limit_wait"] )
 						else:
-							logging.error( "There was an undefined error in the OAPI call to {} (status code: {}), sleeping for {} seconds".format( res.url, res.status_code, self.open_api_timers["rate_limit_wait"] ) )
+							logging.error( "There was an undefined error in the OAPI call to {} (status code: {}), {} is sleeping for {} seconds".format( res.url, res.status_code, tid, self.open_api_timers["rate_limit_wait"] ) )
 							if not self.retry:
 								raise OAPIError
 
@@ -317,7 +329,7 @@ class API( object ):
 						try:
 							self.match_info_queue.put( match, timeout = self.open_api_timers["queue_warning"] )
 						except queue.Full:
-							logging.warning( "The match queue has been full for {} seconds [OAPI can't put]!".format( self.open_api_timers["queue_warning"] ) )
+							logging.warning( "The match queue has been full for {} seconds [OAPI {} can't put]!".format( self.open_api_timers["queue_warning"], tid ) )
 							continue
 
 						break
@@ -325,9 +337,9 @@ class API( object ):
 				self.matches_queue.task_done()
 
 			except BaseException as e:
-				logging.exception( "We encountered a fatal error ({}) in the OAPI puller. Sleeping for a long time and trying again.".format( str( e ) ) )
+				logging.exception( "We encountered a fatal error ({}) in the OAPI {} puller. Sleeping for a long time and trying again.".format( str( e ), tid ) )
 				await asyncio.sleep( 1800 )
-				logging.status( "Waking the OAPI puller after a fatal error sleep" )
+				logging.status( "Waking the {} OAPI puller after a fatal error sleep".format( tid ) )
 
 	def get_match( self ):
 		while True:
@@ -345,6 +357,6 @@ class API( object ):
 	def run( self ):
 		logging.info( "Initializing API poller event loop" )
 		self.events.create_task( self._get_matches() )
-		self.events.create_task( self._get_matches_info() )
-		self.events.create_task( self._get_matches_info() )
+		self.events.create_task( self._get_matches_info( tid = 1 ) )
+		self.events.create_task( self._get_matches_info( tid = 2 ) )
 		self.events.run_forever()

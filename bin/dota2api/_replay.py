@@ -13,11 +13,15 @@ class ReplayDownloader( object ):
         self.rate_additional = 30
         self.rate_additional_base = self.rate_additional
         self.events = asyncio.get_event_loop()
+        self.heartbeat = 0
         logging.info( "Initialized replay downloader" )
 
     async def _process( self ):
         while True:
             try:
+                if ( time.time() - self.heartbeat ) >= 3600:
+                    logging.status( "[Replay Downloader] I'm still alive! Queue has {} items.".format( self.queue.qsize() ) )
+                    self.heartbeat = time.time()
 
                 try:
                     match_id, url = await asyncio.wait_for( self.queue.get(), 600 )
