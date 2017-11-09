@@ -39,6 +39,7 @@ class API( object ):
 			"heartbeat":				0
 		}
 
+		self.num_oapi_threads = 2
 		self.open_api_timers = {
 			"last_request":				0,
 			"wait_seconds":				0.4,
@@ -46,7 +47,7 @@ class API( object ):
 			"rate_limit_wait_base":		30,
 			"404_sleep":				60,
 			"queue_warning":			600,
-			"heartbeat":				0
+			"heartbeat":				[0] * self.num_oapi_threads
 		}
 
 		self.wait_increment = 20
@@ -276,16 +277,15 @@ class API( object ):
 		res = await future_res
 		return res
 
-	async def _get_matches_info( self, tid = None ):
-		if tid is None:
-			tid = 0
+	async def _get_matches_info( self, tid = 0 ):
+		tid_num = tid
 		tid = "Instance-" + str( tid )
 
 		while True:
 			try:
-				if ( time.time() - self.open_api_timers["heartbeat"] ) >= 3600:
+				if ( time.time() - self.open_api_timers["heartbeat"][tid_num - 1] ) >= 3600:
 					logging.status( "[OAPI {}] I'm still alive! Queue has ~{} items.".format( tid, self.match_info_queue.qsize() ) )
-					self.open_api_timers["heartbeat"] = time.time()
+					self.open_api_timers["heartbeat"][tid_num - 1] = time.time()
 
 				try:
 					match_id = await asyncio.wait_for( self.matches_queue.get(), self.open_api_timers["queue_warning"] )
@@ -357,6 +357,6 @@ class API( object ):
 	def run( self ):
 		logging.info( "Initializing API poller event loop" )
 		self.events.create_task( self._get_matches() )
-		self.events.create_task( self._get_matches_info( tid = 1 ) )
-		self.events.create_task( self._get_matches_info( tid = 2 ) )
+		for i in range( 0, self.num_oapi_threads ):
+			self.events.create_task( self._get_matches_info( tid = i ) )
 		self.events.run_forever()
