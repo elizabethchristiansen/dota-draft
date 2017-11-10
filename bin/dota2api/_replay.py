@@ -15,14 +15,30 @@ class ReplayDownloader( object ):
         self.rate_additional_base = self.rate_additional
         self.events = asyncio.get_event_loop()
         self.heartbeat = 0
+        self.replays = 0
+        self.last_request = 0
         logging.info( "Initialized replay downloader" )
+
+    async def _request( self, url ):
+        if ( time.time() - self.last_request ) < self.rate:
+            await asyncio.sleep( self.rate - ( time.time() - self.last_request ) )
+
+        future_res = self.events.run_in_executor( None, requests.get, url )
+        self.last_request = time.time()
+        res = await future_res
+        logging.info( "Submitting request for replay {}".format( url ) )
+
+        return res
+
+    def _heartbeat( self ):
+        if ( time.time() - self.heartbeat ) >= 3600:
+            logging.status( "[Replay Downloader] I'm still alive! Queue has {} items, downloaded {} replays so far.".format( self.queue.qsize(), self.replays ) )
+            self.heartbeat = time.time()
 
     async def _process( self ):
         while True:
             try:
-                if ( time.time() - self.heartbeat ) >= 3600:
-                    logging.status( "[Replay Downloader] I'm still alive! Queue has {} items.".format( self.queue.qsize() ) )
-                    self.heartbeat = time.time()
+                self._heartbeat()
 
                 try:
                     match_id, url = await asyncio.wait_for( self.queue.get(), 600 )
@@ -32,9 +48,7 @@ class ReplayDownloader( object ):
 
                 tries = 5
                 while tries > 0:
-                    logging.info( "Getting replay {}".format( url ) )
-                    future_res = self.events.run_in_executor( None, requests.get, url )
-                    r = await future_res
+                    r = await self._request( url )
                     if r.status_code == 200:
                         name = str( match_id ) + ".dem.bz2"
                         path = os.path.abspath( self.dir + "replays/" + name )
@@ -42,6 +56,7 @@ class ReplayDownloader( object ):
                             rep.write( r.content )
 
                         logging.info( "Wrote {}!".format( name ) )
+                        self.replays += 1
                     elif r.status_code == 404:
                         logging.warning( "Replay could not be found! [{}, status code: {}]".format( r.url, r.status_code ) )
                     else:
@@ -57,7 +72,6 @@ class ReplayDownloader( object ):
                     logging.error( "Could not get replay data after 5 tries! [{}, status code: {}]".format( r.url, r.status_code) )
 
                 self.queue.task_done()
-                await asyncio.sleep( self.rate )
 
             except BaseException as e:
                 logging.exception( "We encountered a fatal error ({}) in the replay downloader. Sleeping for a long time and trying again.".format( str( e ) ) )

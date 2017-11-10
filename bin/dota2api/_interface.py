@@ -114,7 +114,7 @@ class API( object ):
 	async def _dapi_request( self, url, headers, payload ):
 		with await self.dotaapi_lock:
 			if time.time() - self.dota_api_timers["last_request"] < self.dota_api_timers["wait_seconds"]:
-					await asyncio.sleep( self.dota_api_timers["wait_seconds"] - ( time.time() - self.dota_api_timers["last_request"] ) )
+				await asyncio.sleep( self.dota_api_timers["wait_seconds"] - ( time.time() - self.dota_api_timers["last_request"] ) )
 
 			get_func = partial( requests.get, url, headers = headers, params = payload )
 			future_res = self.events.run_in_executor( None, get_func )
@@ -268,7 +268,7 @@ class API( object ):
 	async def _oapi_request( self, url ):
 		with await self.oapi_lock:
 			if time.time() - self.open_api_timers["last_request"] < self.open_api_timers["wait_seconds"]:
-					await asyncio.sleep( self.open_api_timers["wait_seconds"] - ( time.time() - self.open_api_timers["last_request"] ) )
+				await asyncio.sleep( self.open_api_timers["wait_seconds"] - ( time.time() - self.open_api_timers["last_request"] ) )
 
 			future_res = self.events.run_in_executor( None, requests.get, url )
 			self.open_api_timers["last_request"] = time.time()
