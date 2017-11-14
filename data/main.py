@@ -36,6 +36,8 @@ def init_logging():
 
 
 def exit_gracefully( sig, frame ):
+    api.close()
+    # replay.close()
     loop.stop()
 
     logging.status( "--- Caught {}, Exiting ---".format( signal.Signals(sig).name ) )
@@ -49,11 +51,11 @@ if __name__ == "__main__":
     loop = asyncio.get_event_loop()
 
     api = API( key = key )
-    replay_dir = "/data/scripts/dota/draft/data/"
-    replay = ReplayDownloader( replay_dir )
+    # replay_dir = "/data/scripts/dota/draft/data/"
+    # replay = ReplayDownloader( replay_dir )
 
     api_future = loop.run_in_executor( None, api.run )
-    replay_future = loop.run_in_executor( None, replay.run )
+    # replay_future = loop.run_in_executor( None, replay.run )
 
     signal.signal( signal.SIGINT, exit_gracefully )
     signal.signal( signal.SIGTERM, exit_gracefully )
@@ -76,6 +78,6 @@ if __name__ == "__main__":
                 t_since_start = time.time() - start
                 logging.status( "There have been {} errors and {} warnings since start ({} non-messages) at a rate of {}s/{}s or {}/{} per successful request".format( error_count, warning_count, num_matches, round( error_count / t_since_start, 3 ), round( warning_count / t_since_start, 3 ), round( error_count / num_matches, 3 ), round( error_count / num_matches, 3 ) ) )
 
-            if game["replay"] is not None:
-                logging.info( "Found a match ({}) with replay data, passing to the downloader!".format( game["match_id"] ) )
-                replay.add_game( ( game["match_id"], game["replay"] ) )
+            # if game["replay"] is not None:
+            #    logging.info( "Found a match ({}) with replay data, passing to the downloader!".format( game["match_id"] ) )
+            #    replay.add_game( ( game["match_id"], game["replay"] ) )
