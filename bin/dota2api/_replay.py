@@ -17,10 +17,11 @@ class ReplayDownloader( object ):
         self.heartbeat = 0
         self.replays = 0
         self.last_request = 0
+        self.exit = False
         logging.info( "Initialized replay downloader" )
 
-    def __del__( self ):
-        logging.status( "Replay downloader exited!" )
+    def close( self ):
+        self.exit = True
 
     async def _request( self, url ):
         if ( time.time() - self.last_request ) < self.rate:
@@ -40,6 +41,10 @@ class ReplayDownloader( object ):
 
     async def _process( self ):
         while True:
+            if self.exit:
+                logging.status( "Replay downloader exited!" )
+                break
+
             try:
                 self._heartbeat()
 

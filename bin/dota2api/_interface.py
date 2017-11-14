@@ -61,8 +61,10 @@ class API( object ):
 		self.oapi_lock = asyncio.Lock()
 		self.dotaapi_lock = asyncio.Lock()
 
-	def __del__( self ):
-		logging.status( "API poller exited!" )
+		self.exit = False
+
+	def close( self ):
+		self.exit = True
 
 	def _get_current_seq_num( self ):
 		payload = { "matches_requested": 1 }
@@ -129,6 +131,10 @@ class API( object ):
 
 	async def _get_matches( self ):
 		while True:
+			if self.exit:
+				logging.status( "Dota API poller exited!" )
+				break
+
 			try:
 				if ( time.time() - self.dota_api_timers["heartbeat"] ) >= 3600:
 					logging.status( "[Dota API] I'm still alive! Queue has {} items.".format( self.matches_queue.qsize() ) )
@@ -285,6 +291,10 @@ class API( object ):
 		tid = "Instance-" + str( tid )
 
 		while True:
+			if self.exit:
+				logging.status( "OAPI {} poller exited".format( tid ) )
+				break
+
 			try:
 				if ( time.time() - self.open_api_timers["heartbeat"][tid_num - 1] ) >= 3600:
 					logging.status( "[OAPI {}] I'm still alive! Queue has ~{} items.".format( tid, self.match_info_queue.qsize() ) )
