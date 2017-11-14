@@ -19,6 +19,9 @@ class ReplayDownloader( object ):
         self.last_request = 0
         logging.info( "Initialized replay downloader" )
 
+    def __del__( self ):
+        logging.status( "Replay downloader exited!" )
+
     async def _request( self, url ):
         if ( time.time() - self.last_request ) < self.rate:
             await asyncio.sleep( self.rate - ( time.time() - self.last_request ) )

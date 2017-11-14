@@ -29,11 +29,15 @@ class Database( object ):
         else:
             self.db.close()
 
+        logging.status( "Database interface exited!" )
+
     def __del__( self ):
         if self.in_memory and not self.mem_only:
             self.work_from_file( overwrite_original = True, reopen = False )
         else:
             self.db.close()
+
+        logging.status( "Database interface exited!" )
 
     def _load_database( self ):
         self.db = sqlite3.connect( self.database_dir )

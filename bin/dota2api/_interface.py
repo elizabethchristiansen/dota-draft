@@ -61,6 +61,9 @@ class API( object ):
 		self.oapi_lock = asyncio.Lock()
 		self.dotaapi_lock = asyncio.Lock()
 
+	def __del__( self ):
+		logging.status( "API poller exited!" )
+
 	def _get_current_seq_num( self ):
 		payload = { "matches_requested": 1 }
 		headers = self.base_headers
