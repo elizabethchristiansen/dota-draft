@@ -5,6 +5,7 @@ import requests
 import queue
 
 from functools import partial
+from threading import Semaphore
 from ._errors import ServiceNotAvailable, InvalidAuthKey, RateLimitActive, CouldNotInit, OAPIError
 
 
@@ -60,11 +61,14 @@ class API( object ):
 
 		self.oapi_lock = asyncio.Lock()
 		self.dotaapi_lock = asyncio.Lock()
+		self.processes = Semaphore( value = self.num_oapi_threads + 1 )
 
 		self.exit = False
 
 	def close( self ):
 		self.exit = True
+		for i in range( 0, self.num_oapi_threads + 1 ):
+			self.processes.aquire()
 
 	def _get_current_seq_num( self ):
 		payload = { "matches_requested": 1 }
@@ -130,9 +134,12 @@ class API( object ):
 		return res
 
 	async def _get_matches( self ):
+		self.processes.aquire()
+
 		while True:
 			if self.exit:
 				logging.status( "Dota API poller exited!" )
+				self.processes.release()
 				break
 
 			try:
@@ -289,10 +296,12 @@ class API( object ):
 	async def _get_matches_info( self, tid = 0 ):
 		tid_num = tid
 		tid = "Instance-" + str( tid )
+		self.processes.aquire()
 
 		while True:
 			if self.exit:
 				logging.status( "OAPI {} poller exited".format( tid ) )
+				self.processes.release()
 				break
 
 			try:
