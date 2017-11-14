@@ -68,7 +68,7 @@ class API( object ):
 	def close( self ):
 		self.exit = True
 		for i in range( 0, self.num_oapi_threads + 1 ):
-			self.processes.aquire()
+			self.processes.acquire()
 
 	def _get_current_seq_num( self ):
 		payload = { "matches_requested": 1 }
@@ -134,7 +134,7 @@ class API( object ):
 		return res
 
 	async def _get_matches( self ):
-		self.processes.aquire()
+		self.processes.acquire()
 
 		while True:
 			if self.exit:
@@ -296,7 +296,7 @@ class API( object ):
 	async def _get_matches_info( self, tid = 0 ):
 		tid_num = tid
 		tid = "Instance-" + str( tid )
-		self.processes.aquire()
+		self.processes.acquire()
 
 		while True:
 			if self.exit:
