@@ -5,11 +5,13 @@ import os
 
 from threading import Lock
 from collections import defaultdict
+from math import floor
 
 
 class Database( object ):
-    def __init__( self, database, mem_only = False ):
+    def __init__( self, database, mem_only = False, check_same_thread = True ):
         self.database_dir = database
+        self.thread_check = check_same_thread
         self.in_memory = False
         self.mem_only = mem_only
         self.lock = Lock()
@@ -32,7 +34,7 @@ class Database( object ):
         logging.status( "Database interface exited!" )
 
     def _load_database( self ):
-        self.db = sqlite3.connect( self.database_dir )
+        self.db = sqlite3.connect( self.database_dir, check_same_thread = self.thread_check )
         logging.info( "Connected to the database ({})".format( self.database_dir ) )
 
         foreign_keys = "PRAGMA foreign_keys = 1"
@@ -149,9 +151,9 @@ class Database( object ):
             tmp.seek(0)
 
             if self.mem_only:
-                self.db = sqlite3.connect( ":memory:", check_same_thread = False )
+                self.db = sqlite3.connect( ":memory:", check_same_thread = self.thread_check )
             else:
-                self.db = sqlite3.connect( ":memory:" )
+                self.db = sqlite3.connect( ":memory:", check_same_thread = self.thread_check )
             self.db.cursor().executescript( tmp.read() )
             self.db.commit()
 
@@ -172,7 +174,7 @@ class Database( object ):
             self.db.close()
             tmp.seek(0)
 
-            self.db = sqlite3.connect( self.database_dir + ".mem" )
+            self.db = sqlite3.connect( self.database_dir + ".mem", check_same_thread = self.thread_check )
             self.db.cursor().executescript( tmp.read() )
             self.db.commit()
 
@@ -292,6 +294,27 @@ class Database( object ):
 
         count = int( data[0][0] )
         return count
+
+    def get_percentile_id( self, percentile ):
+        total_rows = self.get_total_examples()
+
+        self.lock.acquire()
+        try:
+            cursor = self.db.cursor()
+
+            skip = max( 0, int( floor( total_rows * percentile ) ) - 1 )
+            query = "SELECT match_id FROM match_info ORDER BY match_id ASC LIMIT ?, 1"
+            cursor.execute( query, ( skip, ) )
+
+            data = cursor.fetchall()
+        except:
+            logging.error( "A draft query failed. There was an error with the commit." )
+            raise
+        finally:
+            self.lock.release()
+
+        match_id = int( data[0][0] )
+        return match_id
 
     def raw_query( self, query ):
         data = None

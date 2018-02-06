@@ -201,7 +201,7 @@ class API( object ):
 						try:
 							await asyncio.wait_for( self.matches_queue.put( i ), self.dota_api_timers["queue_warning"] )
 						except asyncio.TimeoutError:
-							logging.warning( "The asyncio match queue has been full for {} seconds [Dota API can't put]!".format( self.dota_api_timers["full_queue_warning"] ) )
+							logging.warning( "The asyncio match queue has been full for {} seconds [Dota API can't put]!".format( self.dota_api_timers["queue_warning"] ) )
 							continue
 
 						break

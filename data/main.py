@@ -35,6 +35,13 @@ def init_logging():
     setattr( logging, "status", status_log )
 
 
+def read_key():
+    with open( "key", "r" ) as k:
+        key = k.readlines()[0].strip()
+
+    return key
+
+
 def exit_gracefully( sig, frame ):
     api.close()
     # replay.close()
@@ -47,7 +54,7 @@ if __name__ == "__main__":
     init_logging()
     logging.status( "--- Starting API Poller ---" )
 
-    key = "413B7794E4797A6A070B473F904CA120"
+    key = read_key()
     loop = asyncio.get_event_loop()
 
     api = API( key = key )
