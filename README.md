@@ -12,7 +12,7 @@ and install the required pip modules with
 
     pip install -r requirements.txt
 
-You'll also have to set the `PYTHONPATH` environment variable to include the **bin/** directory.   
+You'll also need to install **Keras** and **TensorFlow** which are not included in the _requirements.txt_ file (thanks pip). Additionally, set the `PYTHONPATH` environment variable to include the **bin/** directory.   
 
 To use the script, source the virtual environment and execute the script:
 
