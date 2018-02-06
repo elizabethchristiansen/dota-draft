@@ -1,6 +1,7 @@
 This repo contains two components, the first pulls Dota 2 games from various APIs for use by the second component, a neural net that learns how to best complete the draft given a set of heroes by learning on the winning draft from each game.
 
-**Match Pulling**
+**Match Pulling**  
+
 The first script is used to pull all ranked all pick games starting now and pulling new games (i.e. is does not go back in history but rather keeps up to date with games being played) via the Dota 2 API to get a list of games and the Dota OpenAPI (YASP) to get details on each individual game (better rate limit). Stores games in a local SQLite3 database.   
 
 To use, create a Python 3.6 virtual environment with
@@ -18,9 +19,10 @@ To use the script, source the virtual environment and execute the script:
     source <myenvname>
     python data/main.py
 
-Which will begin the script, outputting warning/errors to **scraper.log** in **bin/**.    
+Which will begin the script, outputting warning/errors to **scraper.log** in **bin/**. You will need to get a Valve API key to use the script. Once you have it, place it in a _key_ file in the data folder, _data/key_ and **main.py** will read it.
 
-**Draft Completion**
+**Draft Completion**  
+
 This part is still a work in progress but the current implementation works (although the predictions may not be perfect). This part uses the winning draft of five heroes from each match, corrupts it and feeds it through a denoising autoencoder with the aim of reconstructing the corrupted heroes. Corruption in this sense means randomly removing between 1 and 4 heroes from the draft (leaving a corrupted draft of 1-4 heroes).
 
 Point the script to your database (generated with the previous script) and run
